@@ -2,7 +2,7 @@
 import os
 
 # Data directory (point to where your 265 JSON files live)
-DATA_DIR = r"C:\Users\muham\OneDrive\Desktop\Cricket"
+DATA_DIR = r""
 
 # FAISS index base path (will create two files: .faiss and _metadata.pkl)
 INDEX_PATH = os.path.join(DATA_DIR, "faiss_index")
@@ -19,7 +19,7 @@ CHUNK_SIZE = 1200        # characters in a full-text chunk (we chunk by chars)
 CHUNK_OVERLAP = 300
 
 # Local OpenAI-compatible LLM (Ollama or similar)
-OPENAI_API_BASE = "http://localhost:11434/v1"   # change if needed
+OPENAI_API_BASE = ""   # change if needed
 OPENAI_API_KEY = "ollama"
 LLM_MODEL = "llama3.1:8b"
 
@@ -31,3 +31,4 @@ LLM_MAX_TOKENS = 800
 os.makedirs(MODEL_CACHE_DIR, exist_ok=True)
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(os.path.dirname(INDEX_PATH), exist_ok=True)
+
