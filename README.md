@@ -1,15 +1,17 @@
-# 🏏 Cricket World Cup Chatbot
+# 🏏 Cricket World Cup RAG Assistant
 
-A CLI-based RAG chatbot for ICC Cricket World Cup queries (2003–2023). Uses semantic search with FAISS and AI-powered responses via OpenRouter.
+A production-grade RAG (Retrieval-Augmented Generation) chatbot for ICC Cricket World Cup queries (2003–2023). Features **hybrid search** (FAISS semantic + BM25 keyword), **anti-hallucination** safeguards, and a **FastAPI + web frontend**.
 
 ## ✨ Features
 
-- **🤖 AI-Powered Responses**: Uses OpenRouter models for natural, contextual answers
-- **🔍 Semantic Search**: FAISS-powered vector search across cricket match data
-- **📚 RAG Integration**: Retrieval-Augmented Generation for accurate, sourced responses
-- **💬 Interactive CLI**: Command-line interface with conversation history
-- **🎯 Cricket-Focused**: Specialized for World Cup data with 20+ years of matches
-- **⚡ Local Processing**: Embeddings generated locally (no API costs)
+- **🔍 Hybrid Search**: FAISS semantic search + BM25 keyword search with Reciprocal Rank Fusion (RRF)
+- **🤖 AI-Powered Responses**: OpenRouter LLM with query-type-specific prompts and anti-hallucination rules
+- **📚 Rich RAG Pipeline**: Multi-query retrieval, query rewriting, entity resolution, context re-ranking
+- **🎯 Query Classification**: Automatic detection of statistical, comparative, match-specific, tournament, player, and general queries
+- **💬 Two Interfaces**: Interactive CLI + FastAPI web server with polished HTML/CSS/JS frontend
+- **🏏 Cricket-Aware**: Entity resolution for player nicknames, team abbreviations, tournament years
+- **⚡ Local Embeddings**: sentence-transformers/all-MiniLM-L6-v2 (free, no API costs)
+- **📊 Rich Context Data**: Curated memorable moments, cross-tournament records, and detailed match data
 
 ## 🚀 Quick Start
 
@@ -19,8 +21,8 @@ pip install -r requirements.txt
 ```
 
 ### 2. Configure OpenRouter
-Create a `.env` file with your credentials:
-```
+Create a `.env` file:
+```env
 LLM_PROVIDER=openrouter
 LLM_MODEL=anthropic/claude-3-haiku
 LLM_API_KEY=sk-or-v1-xxxxxxxxxxxxx
@@ -34,71 +36,119 @@ LLM_TEMPERATURE=0.3
 python main.py --build-index
 ```
 
-### 4. Start Chatting
-```bash
-# Interactive mode
-python main.py
+### 4. Start Using
 
-# Or ask a single question
-python main.py --query "Who won the 2011 World Cup?"
-```
-
-## 💻 Usage
-
-### Interactive CLI
+**Option A — CLI Mode:**
 ```bash
 python main.py
 ```
-Commands available:
-- `/status` — Show system status
-- `/history` — Show chat history from history.txt
-- `/clear` — Clear conversation history and delete history.txt
-- `/build` — Rebuild embeddings index
-- `/help` — Show help
-- `/quit` — Exit
 
-### Single Question Mode
+**Option B — Web Server + Frontend:**
 ```bash
-python main.py --query "Which team won the 2019 World Cup?"
+python server.py
+# Open http://localhost:8000 in your browser
 ```
 
-### System Status
+**Option C — Single Question:**
 ```bash
-python main.py --status
+python main.py --query "Who won the 2019 World Cup final?"
 ```
 
-## 🏗️ Project Structure
+## 💻 CLI Commands
 
 ```
-Cricket World Cup Chatbot/
-├── main.py                 # Main chatbot application & CLI
-├── embeddings_utils.py     # Embeddings manager & search utilities
-├── config.py               # Configuration settings
+/status  — Show system status (vectors, chunks, LLM info)
+/history — Show chat history from history.txt
+/clear   — Clear conversation history
+/build   — Rebuild FAISS + BM25 index
+/help    — Show help
+/quit    — Exit
+```
+
+## 🌐 API Endpoints (server.py)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/chat` | Send a question, get a RAG-powered answer |
+| `GET` | `/status` | System status and statistics |
+| `POST` | `/build` | Rebuild the search index |
+| `POST` | `/clear-history` | Clear conversation history |
+| `GET` | `/health` | Simple health check |
+| `GET` | `/` | Landing page (frontend) |
+| `GET` | `/chat-page` | Chatbot page (frontend) |
+
+### Example API Call
+```bash
+curl -X POST http://localhost:8000/chat \
+  -H "Content-Type: application/json" \
+  -d '{"question": "Who scored the most runs in 2023 World Cup?"}'
+```
+
+## 🏗️ Architecture
+
+```
+Cricket-World-Cup-RAG-Assistant/
+├── main.py                 # CLI chatbot, query pipeline, prompt templates
+├── server.py               # FastAPI web server
+├── embeddings_utils.py     # Orchestrator: search, context assembly, index management
+├── config.py               # Central configuration (BM25, search, chunking params)
 ├── requirements.txt        # Python dependencies
-├── README.md              # This file
-├── .env                   # OpenRouter credentials (required)
-├── Embedding/             # Core ML components
-│   ├── embeddings.py      # Sentence-transformer embeddings
-│   ├── vector_store.py    # FAISS vector database
-│   ├── chunking.py        # Text chunking engine
-│   └── ingestion.py       # Data ingestion pipeline
-├── index/                 # FAISS indexes & metadata
-│   ├── faiss.index        # Vector index
-│   ├── chunks.json        # Text chunks
-│   └── metadata.md        # Index information
-├── Cricket Data/          # Source datasets
-│   ├── cleaned_matches/   # Match JSON files
-│   ├── embeddings/        # Text embeddings
-│   ├── metadata/          # Tournament data
-│   └── statistical_analysis/ # Performance stats
-└── __init__.py           # Package initialization
+├── Embedding/
+│   ├── embeddings.py       # Sentence-transformer embedding generation
+│   ├── vector_store.py     # FAISS + BM25 hybrid vector store
+│   ├── chunking.py         # Cricket-aware text chunking engine
+│   └── ingestion.py        # Data ingestion pipeline
+├── Frontend/
+│   ├── index.html          # Landing page
+│   ├── chatbot.html        # Chat interface
+│   ├── chatbot.js          # Chat logic (connects to /chat API)
+│   ├── script.js           # Landing page logic
+│   └── style.css           # Styles
+├── Cricket Data/
+│   ├── cleaned_matches/    # Match JSON files (2003–2023)
+│   ├── embeddings/         # Pre-processed text + memorable moments + records
+│   ├── metadata/           # Tournament metadata
+│   └── statistical_analysis/ # Performance statistics
+└── index/
+    ├── faiss.index         # FAISS HNSW vector index
+    ├── chunks.json         # Indexed text chunks
+    ├── bm25_corpus.json    # BM25 keyword search corpus
+    └── vectors.json        # Raw vectors
 ```
+
+## 🔧 How It Works
+
+### RAG Pipeline (per query)
+
+1. **Query Rewriting** — Resolve pronouns, temporal references, expand abbreviations
+2. **Query Classification** — Detect type (statistical / comparative / match / tournament / player / general)
+3. **Entity Resolution** — Resolve player nicknames ("MSD" → "MS Dhoni"), team names ("Aussies" → "Australia")
+4. **Sub-Query Generation** — Break complex queries into 5–20 targeted sub-queries
+5. **Hybrid Search** — FAISS semantic search + BM25 keyword search, fused via RRF
+6. **Context Assembly** — Merge, deduplicate, and truncate results within token limits
+7. **Prompt Construction** — Query-type-specific system prompts with anti-hallucination rules
+8. **LLM Generation** — OpenRouter API call with context + conversation history
+9. **Response** — Structured answer with source attribution and metadata
+
+### Hybrid Search Details
+
+- **Semantic (FAISS HNSW)**: 384-dim embeddings from all-MiniLM-L6-v2
+- **Keyword (BM25)**: rank-bm25 with cricket-aware tokenization and stopword removal
+- **Fusion**: Reciprocal Rank Fusion with configurable weights per query type
+  - Statistical queries: 60% semantic, 40% BM25
+  - Match-specific: 65% semantic, 35% BM25
+  - General: 75% semantic, 25% BM25
+
+### Anti-Hallucination Safeguards
+
+- Query-type-specific prompt instructions with accuracy warnings
+- Explicit facts encoded in system prompt (e.g., 2019 final boundary countback details)
+- Context-grounded answers — LLM instructed to trust context data over its own knowledge
+- Coverage validation — detects when context may be insufficient
 
 ## ⚙️ Configuration
 
 ### Environment Variables (.env)
-
-All variables are **required** - no fallbacks or defaults:
 
 | Variable | Description | Example |
 |----------|-------------|---------|
@@ -107,7 +157,20 @@ All variables are **required** - no fallbacks or defaults:
 | `LLM_API_KEY` | Your OpenRouter API key | `sk-or-v1-...` |
 | `LLM_BASE_URL` | API base URL | `https://openrouter.ai/api/v1` |
 | `LLM_MAX_TOKENS` | Max response tokens | `1500` |
-| `LLM_TEMPERATURE` | Response creativity | `0.3` |
+| `LLM_TEMPERATURE` | Response creativity (0.0–1.0) | `0.3` |
+
+### Key Config Parameters (config.py)
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `BM25_ENABLED` | `True` | Enable/disable BM25 hybrid search |
+| `HYBRID_SEMANTIC_WEIGHT` | `0.7` | Default semantic search weight |
+| `HYBRID_BM25_WEIGHT` | `0.3` | Default BM25 search weight |
+| `MAX_CONTEXT_CHARS` | `14000` | Max characters in LLM context |
+| `MAX_CONTEXT_CHUNKS` | `30` | Max chunks in context |
+| `RERANKING_ENABLED` | `True` | Enable chunk re-ranking |
+| `SEARCH_TOP_K_DEFAULT` | `10` | Default results per search |
+| `SEARCH_SCORE_THRESHOLD` | `0.25` | Minimum similarity score |
 
 ### Supported OpenRouter Models
 
@@ -118,230 +181,32 @@ All variables are **required** - no fallbacks or defaults:
 
 ## 🎯 Example Queries
 
-- "Who won the 2011 World Cup?"
-- "Compare India's performance in 2003 vs 2023"
-- "What were the biggest upsets in World Cup history?"
-- "Who scored the most centuries in 2019?"
-- "Which bowler took the most wickets in 2015?"
-
-## 🔧 How It Works
-
-1. **Query Processing**: User question → semantic embedding
-2. **Vector Search**: FAISS finds most similar cricket data chunks
-3. **Context Assembly**: Top chunks combined into coherent context
-4. **AI Generation**: OpenRouter model generates natural answer using context
-5. **Response**: Accurate, sourced answer returned to user
+- "Who won the 2019 World Cup final and how?"
+- "Compare Virat Kohli and Ricky Ponting's World Cup records"
+- "What happened in the 2003 World Cup final?"
+- "Tell me about the biggest upsets in World Cup history"
+- "Who scored the most centuries across all World Cups?"
+- "Describe the 2007 World Cup Super Eight format"
+- "What was MS Dhoni's World Cup career like?"
+- "Which bowler had the best economy rate in 2015?"
 
 ## 🐛 Troubleshooting
 
-### Common Issues
-
-**"Module not found" errors**
-```bash
-pip install -r requirements.txt
-```
-
-**"API key not found"**
-- Check `.env` file exists and has correct values
-- Ensure no extra spaces or quotes
-
-**"Knowledge base not initialized"**
-- Run `python main.py --build-index` first
-- Check that Cricket Data folder exists
-
-**Poor answer quality**
-- Try different OpenRouter models
-- Check if embeddings index is built
-- Verify query is specific to cricket World Cups
+| Problem | Solution |
+|---------|----------|
+| Module not found | `pip install -r requirements.txt` |
+| API key not found | Check `.env` file exists with correct values |
+| Knowledge base not initialized | Run `python main.py --build-index` |
+| Poor answer quality | Try a stronger model, or rebuild index with `--build-index` |
+| BM25 errors | Ensure `rank-bm25` is installed: `pip install rank-bm25` |
+| Server won't start | Check port 8000 is free, try `python server.py` |
 
 ## 📈 System Requirements
 
-- **Python**: 3.8+
-- **RAM**: 4GB+ (for FAISS index loading)
-- **Storage**: ~50MB (for indexes and data)
-- **Internet**: Required for OpenRouter API calls
-
-## 📄 License
-
-This project uses cricket data from public ICC sources. AI responses generated using your OpenRouter account.
-
-# Initialize
-kb = CricketKB()
-kb.initialize()
-
-# Ask questions
-answer = kb.ask_question("Who scored the most runs in 2023 World Cup?")
-print(answer)
-
-# Get raw context for custom processing
-context = kb.get_rag_context("Compare India vs Australia in 2023")
-print(context['context_text'])
-print("Sources:", context['sources'])
-```
-
-### Command Line Interface
-
-```bash
-# Ask questions
-python main.py "Which team won the 2019 World Cup?"
-
-# Check system status
-python main.py --status
-
-# Get help
-python main.py
-```
-
-### Advanced Usage
-
-```python
-# Custom context retrieval
-context = kb.get_rag_context("Batting records", top_k=10)
-
-# Access raw components
-from Embedding.embeddings import EmbeddingGenerator
-embedder = EmbeddingGenerator()
-vector = embedder.embed_query("cricket question")
-```
-
-## 🏗️ Project Structure
-
-```
-Cricket Knowledge Base/
-├── main.py                 # Main CricketKB class & CLI
-├── __init__.py            # Package exports
-├── __main__.py            # Module entry point
-├── config.py              # Configuration settings
-├── requirements.txt       # Python dependencies
-├── .env                   # OpenRouter credentials (create this)
-├── README.md              # This file
-├── Embedding/             # Core ML components
-│   ├── embeddings.py      # Sentence-transformer embeddings
-│   ├── vector_store.py    # FAISS vector database
-│   ├── chunking.py        # Text chunking engine
-│   └── ingestion.py       # Data ingestion pipeline
-├── index/                 # FAISS indexes & metadata
-│   ├── faiss.index        # Vector index
-│   ├── chunks.json        # Text chunks
-│   └── vectors.json       # Vector mappings
-├── Cricket Data/          # Source datasets
-│   ├── cleaned_matches/   # 299 match JSONs
-│   ├── embeddings/        # Text embeddings
-│   ├── metadata/          # Tournament data
-│   └── statistical_analysis/ # Performance stats
-└── documents/             # Additional documents
-```
-
-## 🔧 API Reference
-
-### CricketKB Class
-
-#### Methods
-
-- **`initialize()`**: Load FAISS index and prepare for queries
-- **`ask_question(question: str) -> str`**: Get AI-generated answer
-- **`get_rag_context(query: str, top_k: int = 5) -> dict`**: Retrieve relevant context
-- **`get_status() -> dict`**: Get system status and statistics
-
-#### Context Response Format
-
-```python
-{
-    "context_text": "Combined text from relevant chunks...",
-    "sources": [
-        {"file": "2011_tournament_summary.txt", "score": 0.85, "type": "summary"},
-        # ... more sources
-    ],
-    "query": "original query",
-    "model": "openrouter model name"
-}
-```
-
-## ⚙️ Configuration
-
-### Environment Variables (.env)
-
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `OPENROUTER_API_KEY` | Your OpenRouter API key | `sk-or-v1-...` |
-| `OPENROUTER_MODEL` | AI model to use | `anthropic/claude-3-haiku` |
-
-### Supported OpenRouter Models
-
-- `anthropic/claude-3-haiku` (fast, cost-effective)
-- `anthropic/claude-3-sonnet` (balanced performance)
-- `openai/gpt-4o-mini` (good balance)
-- `meta-llama/llama-3.1-8b-instruct` (free tier)
-- `microsoft/wizardlm-2-8x22b` (good for cricket analysis)
-
-## 🎯 Example Queries
-
-### Basic Questions
-- "Who won the 2011 World Cup?"
-- "Which country hosted the 2007 World Cup?"
-- "Who was the captain of Australia in 2003?"
-
-### Analytical Questions
-- "Compare India's performance in 2003 vs 2023"
-- "What were the biggest upsets in World Cup history?"
-- "Who scored the most centuries in 2019?"
-
-### Statistical Questions
-- "Which bowler took the most wickets in 2015?"
-- "What was the highest individual score in 2023?"
-- "How many matches did South Africa win in 2011?"
-
-## 🔍 How It Works
-
-1. **Query Processing**: User question → semantic embedding
-2. **Vector Search**: FAISS finds most similar cricket data chunks
-3. **Context Assembly**: Top chunks combined into coherent context
-4. **AI Generation**: OpenRouter model generates natural answer using context
-5. **Response**: Accurate, sourced answer returned to user
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-**"Module not found" errors**
-```bash
-pip install -r requirements.txt
-```
-
-**"API key not found"**
-- Check `.env` file exists and has correct values
-- Ensure no extra spaces or quotes
-
-**"Knowledge base not initialized"**
-```python
-kb = CricketKB()
-kb.initialize()  # Don't forget this step!
-```
-
-**Poor answer quality**
-- Try different OpenRouter models
-- Check if cricket data is properly indexed
-- Verify query is specific to cricket World Cups
-
-### Performance Tips
-
-- Use `top_k=3-5` for faster responses
-- Choose smaller models for speed (Haiku, GPT-4o-mini)
-- Larger models (Sonnet, GPT-4) give better analysis
-
-## 📈 System Requirements
-
-- **Python**: 3.8+
-- **RAM**: 4GB+ (for FAISS index loading)
-- **Storage**: ~50MB (for indexes and data)
-- **Internet**: Required for OpenRouter API calls
-
-## 🤝 Contributing
-
-The system is designed for cricket Q&A but can be adapted for other domains by:
-1. Replacing cricket data with your domain data
-2. Re-indexing with `IngestionPipeline`
-3. Updating prompts for your use case
+- **Python**: 3.9+
+- **RAM**: 4GB+ (for FAISS index + BM25 corpus)
+- **Storage**: ~100MB (indexes, embeddings, data)
+- **Internet**: Required for OpenRouter API calls only (embeddings are local)
 
 ## 📄 License
 
@@ -352,5 +217,6 @@ This project uses cricket data from public ICC sources. AI responses generated u
 **Ready to explore cricket history?** 🏏✨
 
 ```bash
-python main.py "Tell me about the greatest World Cup moments"
+python server.py
+# Then open http://localhost:8000
 ```

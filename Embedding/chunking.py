@@ -1,12 +1,13 @@
 """
-DIE Knowledge Base — Text Chunking Engine
-=============================================
+Cricket World Cup RAG — Text Chunking Engine
+================================================
 Production-grade chunking with semantic boundary detection,
-type classification, and overlap support.
+cricket-specific type classification, rich metadata extraction,
+and overlap support.
 
-Chunk size: 200-400 tokens (target 300)
-Overlap: 30 tokens
-Preserves: headings, paragraphs, tables, speaker turns
+Chunk size: 150-500 tokens (target 300)
+Overlap: 50 tokens
+Preserves: headings, paragraphs, tables, speaker turns, cricket sections
 """
 
 import hashlib
@@ -141,7 +142,17 @@ def _detect_chunk_type(text: str, file_name: str, section_title: Optional[str]) 
     text_lower = text.lower()
     fname_lower = file_name.lower()
 
-    # Cricket-specific types
+    # Cricket-specific types — memorable moments and rich context
+    if "memorable_moments" in fname_lower or "memorable moments" in text_lower[:200]:
+        return "memorable_moments"
+    if "cross_tournament" in fname_lower or "all-time records" in text_lower[:200]:
+        return "cross_tournament"
+    if "records_and_facts" in fname_lower:
+        return "records_and_facts"
+    if "questions_answers" in fname_lower or "cricket_questions" in fname_lower:
+        return "qa_pair"
+
+    # Cricket-specific types — tournament & match data
     if "tournament summary" in text_lower or "tournament_summary" in fname_lower:
         return "tournament_summary"
     if "icc cricket world cup" in text_lower and ("team standings" in text_lower or "team performance" in text_lower):

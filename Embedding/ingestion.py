@@ -1,8 +1,8 @@
 """
-DIE Knowledge Base — Document Ingestion Pipeline
-====================================================
+Cricket World Cup RAG — Document Ingestion Pipeline
+======================================================
 Handles text extraction from multiple source types,
-chunking, embedding generation, and FAISS indexing.
+chunking, embedding generation, BM25 indexing, and FAISS indexing.
 
 Supports: .txt, .json, .md, .csv, conversation.json
 Deduplication: SHA-256 hash-based (same text → skip)
@@ -705,9 +705,9 @@ class IngestionPipeline:
         texts = [c.text for c in new_chunks]
         vectors = self._embedder.embed_batch(texts)
 
-        # Add to FAISS
+        # Add to FAISS + BM25
         chunk_ids = [c.chunk_id for c in new_chunks]
-        self._store.add_vectors(vectors, chunk_ids)
+        self._store.add_vectors(vectors, chunk_ids, chunk_texts=texts)
 
         # Store chunks
         for chunk in new_chunks:
@@ -751,6 +751,23 @@ class IngestionPipeline:
                     elif fname == "all_player_statistics":
                         src_type = "document"
                         file_tags.append("player_statistics")
+                    elif "memorable_moments" in fname:
+                        src_type = "document"
+                        file_tags.append("memorable_moments")
+                        # Extract year from filename
+                        year = fname[:4]
+                        if year.isdigit():
+                            file_tags.append(f"year:{year}")
+                    elif "cross_tournament" in fname or "records_and_facts" in fname:
+                        src_type = "document"
+                        file_tags.append("cross_tournament")
+                        file_tags.append("records_and_facts")
+                    elif "questions_answers" in fname or "cricket_questions" in fname:
+                        src_type = "document"
+                        file_tags.append("qa_pair")
+                    elif "world_cup_summary" in fname:
+                        src_type = "document"
+                        file_tags.append("tournament_summary")
                     else:
                         src_type = "document"
                         file_tags.append("match")

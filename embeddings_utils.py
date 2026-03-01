@@ -1,16 +1,21 @@
 """
-World Cup Chatbot — Embeddings Utilities
-==========================================
-Lightweight module for loading/managing the FAISS index,
-generating embeddings, and mapping queries to relevant
-document snippets from the World Cup dataset (2003–2023).
+Cricket World Cup RAG — Embeddings & Search Utilities
+======================================================
+Manages the FAISS + BM25 hybrid index, generates embeddings,
+performs hybrid search with re-ranking, and assembles
+optimized context for LLM prompt construction.
 
-Reuses existing Embedding/ modules (EmbeddingGenerator, FAISSVectorStore,
-IngestionPipeline, TextChunker) to stay DRY.
+Features:
+    - Hybrid search (FAISS semantic + BM25 keyword)
+    - Metadata-aware re-ranking
+    - Multi-query search with deduplication
+    - Context assembly with intelligent truncation
+    - Index build/rebuild management
 """
 
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -26,22 +31,35 @@ from config import (
     CHUNKS_JSON_PATH,
     SEARCH_TOP_K_DEFAULT,
     SEARCH_SCORE_THRESHOLD,
+    BM25_ENABLED,
+    BM25_WEIGHT,
+    SEMANTIC_WEIGHT,
+    RERANK_ENABLED,
+    RERANK_TOP_N,
+    RERANK_METADATA_BOOST,
+    MAX_CONTEXT_CHARS,
+    MAX_CONTEXT_CHUNKS,
     LOG_LEVEL,
 )
 
 logger = logging.getLogger(__name__)
 logger.setLevel(LOG_LEVEL)
 
+# World Cup years for metadata matching
+WORLD_CUP_YEARS = {"2003", "2007", "2011", "2015", "2019", "2023"}
+
 
 class EmbeddingsManager:
     """
-    Manages the FAISS index, embeddings, and semantic search
-    for the World Cup chatbot.
+    Manages the FAISS + BM25 hybrid index, embeddings, and search
+    for the Cricket World Cup RAG chatbot.
 
     Responsibilities:
-        - Load / initialize FAISS index + chunk mappings
+        - Load / initialize FAISS + BM25 indices + chunk mappings
         - Embed user queries
-        - Perform semantic search → return ranked snippets
+        - Perform hybrid search → re-rank → return ranked snippets
+        - Multi-query search with deduplication and diversity
+        - Context assembly optimized for LLM consumption
         - Rebuild index from Cricket Data if needed
         - Provide index statistics
     """
@@ -60,8 +78,8 @@ class EmbeddingsManager:
 
     def initialize(self) -> None:
         """
-        Load the embedding model, FAISS index, and chunk mappings.
-        If no index exists on disk, creates a fresh one.
+        Load the embedding model, FAISS + BM25 indices, and chunk mappings.
+        If no index exists on disk, creates fresh ones.
         """
         if self._initialized:
             return
@@ -86,7 +104,8 @@ class EmbeddingsManager:
         logger.info(
             f"EmbeddingsManager ready — "
             f"{stats['total_vectors']} vectors, "
-            f"{stats['total_chunks']} chunks"
+            f"{stats['total_chunks']} chunks, "
+            f"BM25: {stats.get('bm25_documents', 0)} docs"
         )
 
     def _ensure_initialized(self) -> None:
@@ -96,7 +115,7 @@ class EmbeddingsManager:
             )
 
     # ────────────────────────────────────────────────────────
-    # SEMANTIC SEARCH
+    # HYBRID SEARCH (FAISS + BM25)
     # ────────────────────────────────────────────────────────
 
     def search(
@@ -104,18 +123,20 @@ class EmbeddingsManager:
         query: str,
         top_k: int = SEARCH_TOP_K_DEFAULT,
         score_threshold: float = SEARCH_SCORE_THRESHOLD,
+        bm25_weight: Optional[float] = None,
     ) -> List[Dict[str, Any]]:
         """
-        Perform semantic search over the FAISS index.
+        Perform hybrid search over the FAISS + BM25 indices.
 
         Args:
             query: User question / search text.
             top_k: Maximum results to return.
-            score_threshold: Minimum cosine similarity to include.
+            score_threshold: Minimum score to include.
+            bm25_weight: Override BM25 weight (default from config).
 
         Returns:
             List of dicts with keys:
-                text, file_name, score, chunk_type, section_title, tags
+                text, file_name, score, chunk_type, section_title, tags, chunk_id
         """
         self._ensure_initialized()
 
@@ -126,8 +147,19 @@ class EmbeddingsManager:
         # Embed query
         query_vector = self._embedder.embed_query(query)
 
-        # Search FAISS
-        raw_results = self._store.search(query_vector, top_k=top_k)
+        # Perform hybrid search
+        effective_bm25_weight = bm25_weight if bm25_weight is not None else BM25_WEIGHT
+        effective_semantic_weight = 1.0 - effective_bm25_weight
+
+        if BM25_ENABLED and self._store._bm25 and self._store._bm25.doc_count > 0:
+            raw_results = self._store.hybrid_search(
+                query_vector, query,
+                top_k=top_k * 2,  # Get more candidates for re-ranking
+                semantic_weight=effective_semantic_weight,
+                bm25_weight=effective_bm25_weight,
+            )
+        else:
+            raw_results = self._store.search(query_vector, top_k=top_k * 2)
 
         # Resolve chunks and filter by score
         results = []
@@ -149,10 +181,90 @@ class EmbeddingsManager:
                 "chunk_id": chunk.chunk_id,
             })
 
+        # Re-rank results using metadata
+        if RERANK_ENABLED and results:
+            results = self._rerank(results, query, top_k)
+
+        results = results[:top_k]
+
         logger.info(
             f"Search for '{query[:60]}...' → "
             f"{len(results)} results (top_k={top_k}, threshold={score_threshold})"
         )
+        return results
+
+    def _rerank(
+        self,
+        results: List[Dict[str, Any]],
+        query: str,
+        top_n: int = RERANK_TOP_N,
+    ) -> List[Dict[str, Any]]:
+        """
+        Re-rank results using metadata matching for better relevance.
+
+        Boosts scores based on:
+        - Year match (query mentions same year as chunk)
+        - Team match (query mentions same team as chunk)
+        - Player match (query mentions same player as chunk)
+        - Chunk type match (chunk type aligns with query type)
+        - Memorable moments files get a boost
+        """
+        query_lower = query.lower()
+
+        # Extract years from query
+        query_years = set(re.findall(r'\b(2003|2007|2011|2015|2019|2023)\b', query))
+
+        for r in results:
+            boost = 0.0
+            text_lower = r["text"].lower()
+            fname_lower = r["file_name"].lower()
+            tags = r.get("tags", [])
+
+            # Year match boost
+            if query_years:
+                chunk_years = set(re.findall(r'\b(2003|2007|2011|2015|2019|2023)\b', r["text"]))
+                tag_years = {t.split(":")[1] for t in tags if t.startswith("year:")}
+                all_chunk_years = chunk_years | tag_years
+                if query_years & all_chunk_years:
+                    boost += RERANK_METADATA_BOOST.get("year_match", 0.0)
+
+            # Memorable moments boost
+            if "memorable_moments" in fname_lower or r["chunk_type"] == "memorable_moments":
+                boost += RERANK_METADATA_BOOST.get("memorable_moments", 0.0)
+
+            # Cross-tournament / records boost for cross-tournament queries
+            cross_keywords = ["all", "every", "across", "history", "all-time", "record", "overall"]
+            if any(kw in query_lower for kw in cross_keywords):
+                if "cross_tournament" in fname_lower or r["chunk_type"] in ("cross_tournament", "records_and_facts"):
+                    boost += RERANK_METADATA_BOOST.get("type_match", 0.0)
+
+            # Player mention boost
+            player_keywords = [
+                "kohli", "tendulkar", "dhoni", "ponting", "rohit", "warner",
+                "starc", "gayle", "stokes", "williamson", "head", "shami",
+                "de villiers", "sangakkara", "gilchrist", "mcgrath", "malinga",
+                "yuvraj", "bumrah", "guptill", "shakib", "sehwag",
+            ]
+            for player in player_keywords:
+                if player in query_lower and player in text_lower:
+                    boost += RERANK_METADATA_BOOST.get("player_match", 0.0)
+                    break
+
+            # Team mention boost
+            team_keywords = [
+                "india", "australia", "england", "new zealand", "pakistan",
+                "south africa", "sri lanka", "bangladesh", "west indies",
+                "afghanistan", "ireland",
+            ]
+            for team in team_keywords:
+                if team in query_lower and team in text_lower:
+                    boost += RERANK_METADATA_BOOST.get("team_match", 0.0)
+                    break
+
+            r["score"] = round(r["score"] + boost, 4)
+
+        # Re-sort by boosted score
+        results.sort(key=lambda x: x["score"], reverse=True)
         return results
 
     def multi_search(
@@ -160,15 +272,17 @@ class EmbeddingsManager:
         queries: List[str],
         top_k: int = SEARCH_TOP_K_DEFAULT,
         score_threshold: float = SEARCH_SCORE_THRESHOLD,
+        bm25_weight: Optional[float] = None,
     ) -> List[Dict[str, Any]]:
         """
         Perform multiple searches and merge results, deduplicating by chunk_id.
-        Useful for cross-tournament or multi-aspect queries.
+        Ensures diversity by including top results from each query.
 
         Args:
             queries: List of search queries.
             top_k: Max results per query.
             score_threshold: Minimum similarity.
+            bm25_weight: Override BM25 weight.
 
         Returns:
             Merged, deduplicated list of results sorted by score.
@@ -178,7 +292,11 @@ class EmbeddingsManager:
         all_results = []
 
         for q in queries:
-            results = self.search(q, top_k=top_k, score_threshold=score_threshold)
+            results = self.search(
+                q, top_k=top_k,
+                score_threshold=score_threshold,
+                bm25_weight=bm25_weight,
+            )
             for r in results:
                 if r["chunk_id"] not in seen_chunks:
                     seen_chunks.add(r["chunk_id"])
@@ -191,8 +309,9 @@ class EmbeddingsManager:
     def get_context_text(
         self,
         query: str,
-        top_k: int = 8,
+        top_k: int = 10,
         score_threshold: float = SEARCH_SCORE_THRESHOLD,
+        bm25_weight: Optional[float] = None,
     ) -> Tuple[str, List[Dict[str, Any]]]:
         """
         Get formatted context text for RAG prompt construction.
@@ -201,11 +320,16 @@ class EmbeddingsManager:
             query: User question.
             top_k: Number of chunks to retrieve.
             score_threshold: Minimum similarity.
+            bm25_weight: Override BM25 weight.
 
         Returns:
             (context_text, sources) — ready for LLM prompt injection.
         """
-        results = self.search(query, top_k=top_k, score_threshold=score_threshold)
+        results = self.search(
+            query, top_k=top_k,
+            score_threshold=score_threshold,
+            bm25_weight=bm25_weight,
+        )
 
         if not results:
             return "", []
@@ -230,24 +354,31 @@ class EmbeddingsManager:
     def multi_query_context(
         self,
         queries: List[str],
-        top_k: int = 8,
+        top_k: int = 10,
         score_threshold: float = SEARCH_SCORE_THRESHOLD,
-        max_total: int = 30,
+        max_total: int = MAX_CONTEXT_CHUNKS,
+        bm25_weight: Optional[float] = None,
     ) -> Tuple[str, List[Dict[str, Any]]]:
         """
         Get context from multiple search queries, merged and deduplicated.
         Ensures diverse coverage by including results from each query.
+        Applies smart truncation to stay within context limits.
 
         Args:
             queries: List of search queries.
             top_k: Max results per query.
             score_threshold: Minimum similarity.
             max_total: Maximum total results to include.
+            bm25_weight: Override BM25 weight.
 
         Returns:
             (context_text, sources)
         """
-        results = self.multi_search(queries, top_k=top_k, score_threshold=score_threshold)
+        results = self.multi_search(
+            queries, top_k=top_k,
+            score_threshold=score_threshold,
+            bm25_weight=bm25_weight,
+        )
         results = results[:max_total]
 
         if not results:
@@ -255,11 +386,21 @@ class EmbeddingsManager:
 
         context_parts = []
         sources = []
+        total_chars = 0
 
         for r in results:
-            context_parts.append(
-                f"[Source: {r['file_name']} | Type: {r['chunk_type']} | Score: {r['score']}]\n{r['text']}"
-            )
+            part = f"[Source: {r['file_name']} | Type: {r['chunk_type']} | Score: {r['score']}]\n{r['text']}"
+
+            # Smart truncation — stop if we'd exceed context limit
+            if total_chars + len(part) + 10 > MAX_CONTEXT_CHARS:
+                remaining = len(results) - len(context_parts)
+                if remaining > 0:
+                    logger.info(f"Context truncated: included {len(context_parts)} of {len(results)} chunks ({total_chars} chars)")
+                break
+
+            context_parts.append(part)
+            total_chars += len(part) + 10
+
             sources.append({
                 "file": r["file_name"],
                 "score": r["score"],
@@ -276,7 +417,7 @@ class EmbeddingsManager:
 
     def build_index(self, force_rebuild: bool = False) -> Dict[str, int]:
         """
-        Build (or rebuild) the FAISS index from the Cricket Data embeddings.
+        Build (or rebuild) the FAISS + BM25 index from the Cricket Data embeddings.
 
         If index already exists and force_rebuild=False, only new
         (non-duplicate) content is added incrementally.
@@ -297,6 +438,11 @@ class EmbeddingsManager:
             if chunks_path.exists():
                 chunks_path.unlink()
                 logger.info("Cleared chunks.json for full rebuild")
+            # Clear BM25
+            bm25_path = Path(INDEX_DIR) / "bm25.pkl"
+            if bm25_path.exists():
+                bm25_path.unlink()
+                logger.info("Cleared bm25.pkl for full rebuild")
             self._pipeline = IngestionPipeline(
                 embedding_generator=self._embedder,
                 vector_store=self._store,
@@ -361,6 +507,8 @@ class EmbeddingsManager:
         if not self._initialized:
             return {"initialized": False}
 
+        store_stats = self._store.get_stats() if self._store else {}
+
         return {
             "initialized": True,
             "total_vectors": self._store.total_vectors if self._store else 0,
@@ -368,8 +516,11 @@ class EmbeddingsManager:
             "index_dir": str(self._index_dir),
             "index_file_exists": (self._index_dir / "faiss.index").exists(),
             "chunks_file_exists": (self._index_dir / "chunks.json").exists(),
+            "bm25_file_exists": (self._index_dir / "bm25.pkl").exists(),
+            "bm25_documents": store_stats.get("bm25_documents", 0),
             "embedding_model": self._embedder._model_name if self._embedder else None,
             "embedding_dimension": self._embedder.dimension if self._embedder else None,
+            "hybrid_search": BM25_ENABLED,
         }
 
     @property

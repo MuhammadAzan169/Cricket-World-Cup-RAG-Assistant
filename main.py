@@ -408,18 +408,12 @@ class QueryClassifier:
     @staticmethod
     def get_search_params(query_type: str, is_cross: bool = False) -> Dict[str, Any]:
         """Get optimized search parameters based on query type."""
-        params = {
-            "statistical": {"top_k": 25, "score_threshold": 0.04},
-            "comparative": {"top_k": 25, "score_threshold": 0.04},
-            "match_specific": {"top_k": 15, "score_threshold": 0.06},
-            "tournament": {"top_k": 20, "score_threshold": 0.04},
-            "player": {"top_k": 25, "score_threshold": 0.04},
-            "general": {"top_k": 20, "score_threshold": 0.05},
-        }
+        from config import QUERY_SEARCH_PARAMS
+        params = QUERY_SEARCH_PARAMS.copy()
         p = params.get(query_type, params["general"]).copy()
         if is_cross:
-            p["top_k"] = min(p["top_k"] + 15, 40)
-            p["score_threshold"] = max(p["score_threshold"] - 0.02, 0.02)
+            p["top_k"] = min(p["top_k"] + 15, 45)
+            p["score_threshold"] = max(p["score_threshold"] - 0.02, 0.01)
         return p
 
 # ────────────────────────────────────────────────────────────
@@ -589,6 +583,34 @@ def generate_sub_queries(query: str, query_type: str) -> List[str]:
             for year in mentioned_years:
                 queries.append(f"{year} world cup key moments match highlights unusual")
     
+    # ── Memorable moments queries: always include for context-rich answers ──
+    memorable_keywords = ["memorable", "moment", "drama", "dramatic", "exciting", "greatest",
+                          "best match", "upset", "super over", "boundary countback", "hat trick",
+                          "record", "fastest", "highest", "lowest", "first", "last", "iconic",
+                          "turning point", "controversial", "shocking", "heartbreak"]
+    if any(kw in q_lower for kw in memorable_keywords):
+        if mentioned_years:
+            for year in mentioned_years:
+                queries.append(f"{year} world cup memorable moments records upsets")
+        else:
+            queries.append("world cup memorable moments records upsets dramatic")
+    
+    # ── Final-specific queries: always search memorable moments for finals ──
+    if "final" in q_lower:
+        if mentioned_years:
+            for year in mentioned_years:
+                queries.append(f"{year} world cup final result winner score")
+                queries.append(f"{year} world cup memorable moments final")
+        else:
+            queries.append("world cup final result winner score memorable moments")
+    
+    # ── Cross-tournament records: search the records file ──
+    records_keywords = ["all-time", "record", "history", "who has the most", "total", "career",
+                        "world cup winners", "how many titles"]
+    if any(kw in q_lower for kw in records_keywords):
+        queries.append("ICC Cricket World Cup All-Time Records Cross-Tournament Facts")
+        queries.append("world cup winners complete list titles")
+    
     # Remove duplicates while preserving order
     seen = set()
     unique_queries = []
@@ -598,7 +620,6 @@ def generate_sub_queries(query: str, query_type: str) -> List[str]:
             seen.add(sq_normalized)
             unique_queries.append(sq)
     
-    return unique_queries
     return unique_queries
 
 def validate_context_coverage(context_text: str, query: str) -> str:
@@ -768,7 +789,17 @@ class PromptTemplates:
    - Use emojis sparingly for flair (🏏, 🏆, ⭐)
    - Break long answers into clear sections
 
-8. **ACCURACY**: When context data provides specific numbers (runs, wickets, averages, scores), use those EXACT numbers. When supplementing from knowledge, be as accurate as possible.
+8. **ACCURACY IS PARAMOUNT — ANTI-HALLUCINATION RULES**:
+   - When context data provides specific numbers (runs, wickets, averages, scores), use those EXACT numbers.
+   - **NEVER fabricate statistics** — if you don't know an exact number, say approximately or acknowledge uncertainty.
+   - **NEVER invent match scores, individual performances, or records** that aren't in the context or your certain knowledge.
+   - **Key facts you MUST get right**:
+     * 2019 WC final: Decided by BOUNDARY COUNTBACK after BOTH match AND Super Over were tied at 241 and 15 respectively. NOT decided by wickets.
+     * 2007 WC final venue: Kensington Oval, Barbados (NOT Lord's London).
+     * Rohit Sharma's WC centuries: His highest in a WC was 140 vs Pakistan (2019). He has NEVER scored a double century in a World Cup.
+     * Australia have won 6 World Cup titles (most ever): 1987, 1999, 2003, 2007, 2015, 2023.
+   - If context data contradicts your knowledge, TRUST the context data.
+   - If you're unsure about a specific stat, provide what you know with appropriate hedging.
 
 9. **WORLD CUP COVERAGE**: ICC Cricket World Cup tournaments: 2003 (South Africa), 2007 (West Indies), 2011 (India/Sri Lanka/Bangladesh), 2015 (Australia/New Zealand), 2019 (England), 2023 (India).
 
@@ -785,10 +816,12 @@ class PromptTemplates:
 - CAREFULLY scan ALL context data to extract every relevant statistic.
 - Present data in a clean markdown table when appropriate.
 - Include exact numbers: runs, averages, strike rates, wickets, etc.
-- If the context has partial data, present what's available AND fill gaps from your knowledge — but do it seamlessly.
-- For "most/best/highest" queries: list ALL candidates you can find, then declare the answer.
+- For "most/best/highest" queries: list ALL candidates you can find from context, then declare the answer.
 - For aggregate queries (e.g., "total across all WCs"), SUM the data from each tournament/match.
-- If asked about a calculated stat (economy rate, average, percentage), COMPUTE it from available data.""",
+- If asked about a calculated stat (economy rate, average, percentage), COMPUTE it from available data.
+- ⚠ ONLY present statistics that appear in the context or that you are absolutely certain about.
+- ⚠ If a number is not in the context and you are not 100% sure, say "approximately" or "based on available data" — NEVER fabricate exact numbers.
+- ⚠ Double-check any averages, strike rates, or economy rates — a wrong decimal can be very misleading.""",
 
             "comparative": """
 **COMPARISON QUERY INSTRUCTIONS**:
@@ -797,7 +830,10 @@ class PromptTemplates:
 - Cover ALL tournaments/years where both subjects participated.
 - Provide analytical insights — don't just list numbers, tell the story.
 - End with a clear, well-reasoned verdict about who comes out ahead and why.
-- If comparing across tournaments, show year-by-year breakdown.""",
+- If comparing across tournaments, show year-by-year breakdown.
+- ⚠ Only include data points that are present in the context or that you are certain about.
+- ⚠ If data is missing for one subject, acknowledge it rather than guessing. Partial comparisons are better than wrong ones.
+- ⚠ When comparing players, ensure you are comparing the same metric (e.g., World Cup stats only, not overall ODI stats unless asked).""",
 
             "match_specific": """
 **MATCH QUERY INSTRUCTIONS**:
@@ -806,7 +842,10 @@ class PromptTemplates:
 - Mention Player of the Match and key turning points.
 - Tell the STORY of the match — what made it special, dramatic, or memorable.
 - Include specific moments like crucial wickets, big partnerships, last-over drama.
-- If asked about an obscure detail (unusual dismissal, specific over, etc.), look carefully in the Key Moments section of the context.""",
+- If asked about an obscure detail (unusual dismissal, specific over, etc.), look carefully in the Key Moments section of the context.
+- ⚠ Get the VENUE and DATE right — these are commonly confused between matches. Only state them if they appear in context.
+- ⚠ Do NOT mix up details from different matches. If the context includes multiple matches, carefully separate them.
+- ⚠ For finals and semi-finals, the exact result margin and method (e.g., "by 125 runs", "by boundary countback") must be precisely stated.""",
 
             "tournament": """
 **TOURNAMENT QUERY INSTRUCTIONS**:
@@ -816,7 +855,10 @@ class PromptTemplates:
 - Captain information.
 - If asked about rules/format/structure, explain the tournament structure clearly.
 - If asked about awards, provide the specific award winner(s).
-- For cross-tournament queries, present data for ALL relevant years in a table.""",
+- For cross-tournament queries, present data for ALL relevant years in a table.
+- ⚠ Get the Host Country right: 2003=South Africa, 2007=West Indies, 2011=India/SL/Bangladesh, 2015=Australia/NZ, 2019=England, 2023=India.
+- ⚠ Get the Winner right: 2003=Australia, 2007=Australia, 2011=India, 2015=Australia, 2019=England, 2023=Australia.
+- ⚠ Do not confuse tournament formats — group stages, Super Six, Super Eight, round-robin, and knockout structures varied across editions.""",
 
             "player": """
 **PLAYER QUERY INSTRUCTIONS**:
@@ -826,14 +868,19 @@ class PromptTemplates:
 - Highlight their BEST performances — mention specific match details.
 - For cross-tournament player queries: show year-by-year breakdown table.
 - Include captaincy records if applicable.
-- Tell the player's World Cup STORY — their journey, peaks, memorable moments.""",
+- Tell the player's World Cup STORY — their journey, peaks, memorable moments.
+- ⚠ Verify that the stats you cite (centuries, totals, averages) actually appear in the context. Do NOT fabricate career World Cup totals.
+- ⚠ If a player's stats from one tournament are missing, clearly state which tournaments you have data for.
+- ⚠ Common pitfall: Don't confuse a player's overall ODI record with their World Cup-specific record unless the user asks about ODIs.""",
 
             "general": """
 **GENERAL QUERY INSTRUCTIONS**:
 - Provide a comprehensive, well-rounded answer.
 - Use context data as the foundation, supplement with your cricket knowledge.
 - Be engaging, informative, and conversational.
-- Structure your answer logically with clear sections.""",
+- Structure your answer logically with clear sections.
+- ⚠ Even for general questions, ground your answer in the retrieved context. Do not drift into speculation.
+- ⚠ If the question is vague, provide a helpful overview and then invite the user to ask something more specific.""",
         }
 
         instruction = type_instructions.get(query_type, type_instructions["general"])
@@ -852,10 +899,11 @@ class PromptTemplates:
 --- CONTEXT DATA END ---
 
 IMPORTANT REMINDERS:
-- Give a COMPLETE, NATURAL answer. Never say you can't answer or that data is missing.
-- Use context data as primary source, blend with your knowledge seamlessly.
+- Your PRIMARY source is the context data above. Only supplement with knowledge you are CERTAIN about.
 - For aggregate/cross-tournament questions, carefully combine data from ALL relevant context chunks.
-- Be a cricket expert talking to a fan — warm, passionate, authoritative."""
+- If context data conflicts with your knowledge, TRUST THE CONTEXT DATA.
+- Never fabricate scores, dates, venues, or statistics. If unsure, say so gracefully.
+- Be a cricket expert talking to a fan — warm, passionate, authoritative, but honest."""
 
 # ────────────────────────────────────────────────────────────
 # CRICKET CHATBOT
@@ -947,37 +995,25 @@ class CricketChatbot:
         
         logger.info(f"Searching with {len(enhanced_queries)} sub-queries")
 
-        # Step 6: Multi-query semantic search
+        # Step 6: Multi-query semantic + BM25 hybrid search
+        bm25_weight = search_params.get("bm25_weight", None)
         if len(enhanced_queries) > 1:
             context_text, sources = self._embeddings.multi_query_context(
                 queries=enhanced_queries,
                 top_k=search_params["top_k"],
                 score_threshold=search_params["score_threshold"],
                 max_total=25,
+                bm25_weight=bm25_weight,
             )
         else:
             context_text, sources = self._embeddings.get_context_text(
                 query=enhanced_queries[0],
                 top_k=search_params["top_k"],
                 score_threshold=search_params["score_threshold"],
+                bm25_weight=bm25_weight,
             )
 
-        # Step 6b: Smart context truncation — prioritize highest-scoring chunks
-        MAX_CONTEXT_CHARS = 12000
-        if len(context_text) > MAX_CONTEXT_CHARS:
-            logger.info(f"Context truncated from {len(context_text)} to ~{MAX_CONTEXT_CHARS} chars")
-            # Split into chunks, keep the highest-quality ones that fit
-            context_parts = context_text.split("\n\n---\n\n")
-            kept_parts = []
-            total_len = 0
-            for part in context_parts:
-                if total_len + len(part) + 10 > MAX_CONTEXT_CHARS:
-                    break
-                kept_parts.append(part)
-                total_len += len(part) + 10
-            context_text = "\n\n---\n\n".join(kept_parts)
-            if len(kept_parts) < len(context_parts):
-                context_text += f"\n\n[... {len(context_parts) - len(kept_parts)} additional context chunks omitted for brevity ...]"
+        # Step 6b: Context truncation is now handled inside multi_query_context/get_context_text
 
         # Step 7: Validate context coverage
         coverage_note = validate_context_coverage(context_text, rewritten_query)

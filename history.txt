@@ -1525,3 +1525,18 @@ Answer: **India – 1,014 extras**
 Across every ICC Cricket World Cup from 2003 to 2023, India has conceded the highest number of extras (wides, no‑balls, leg‑byes, byes, etc.) of any nation. The tally of **1,014** extras reflects the cumulative total from all 107 matches India has played in that period. This figure includes every type of extra, underscoring how often Indian bowlers have been pushed to the limit in World Cup contests.
 --------------------------------------------------------------------------------
 
+[2026-03-02 02:43:39] Query Type: player
+Question: Virat Kohli's World Cup records
+Answer: I could not generate a response. Please try rephrasing your question.
+--------------------------------------------------------------------------------
+
+[2026-03-02 02:46:32] Query Type: player
+Question: Virat Kohli's World Cup records
+Answer: I could not generate a response. Please try rephrasing your question.
+--------------------------------------------------------------------------------
+
+[2026-03-02 02:46:49] Query Type: tournament
+Question: who won world cup 2023
+Answer: 🏆 **Australia** lifted the ICC Cricket World Cup trophy in 2023, defeating India in a thrilling final at the Narendra Modi Stadium in Ahmedabad. The **Australian team**, led by captain **Pat Cummins**, showcased a blend of experience and youthful energy, culminating in a memorable victory that added a sixth title to their illustrious World Cup record.
+--------------------------------------------------------------------------------
+
