@@ -14,21 +14,6 @@
     if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
     window.scrollTo(0, 0);
   </script>
-  <script>
-    // Adjust CSS/JS paths if served from FastAPI
-    if (window.location.pathname === '/' && window.location.hostname === 'localhost') {
-      document.querySelectorAll('link[rel="stylesheet"]').forEach(link => {
-        if (link.href.includes('style.css')) {
-          link.href = '/static/style.css';
-        }
-      });
-      document.querySelectorAll('script[src]').forEach(script => {
-        if (script.src.includes('script.js')) {
-          script.src = '/static/script.js';
-        }
-      });
-    }
-  </script>
 </head>
 <body>
 
@@ -50,7 +35,13 @@
         <span class="navbar-emoji">🏏</span>
         <span class="navbar-title">CricketWC</span>
       </a>
-      <div class="navbar-links">
+      <!-- Mobile hamburger toggle -->
+      <button class="navbar-toggle" id="navbar-toggle" aria-label="Toggle navigation">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+      <div class="navbar-links" id="navbar-links">
         <a href="#hero">Home</a>
         <a href="#timeline">Timeline</a>
         <a href="#players">Players</a>
@@ -233,7 +224,7 @@
         <div class="chat-suggestions" id="chat-suggestions"></div>
 
         <div class="chat-input-area">
-          <form id="chat-form" class="chat-form" onsubmit="return false;">
+          <form id="chat-form" class="chat-form">
             <input type="text" id="chat-input" class="chat-input" placeholder="Ask about any World Cup moment..." autocomplete="off" />
             <button type="submit" id="chat-send-btn" class="chat-send-btn" disabled>
               <i data-lucide="send" class="icon-sm"></i>
@@ -285,46 +276,33 @@
   <script>
     // Smooth page transition: fade out overlay on load
     window.addEventListener('load', function() {
-      const overlay = document.getElementById('page-overlay');
+      var overlay = document.getElementById('page-overlay');
       if (overlay) {
-        setTimeout(() => {
+        setTimeout(function() {
           overlay.classList.add('fade-out');
-          setTimeout(() => overlay.remove(), 600);
+          setTimeout(function() { overlay.remove(); }, 600);
         }, 300);
       }
     });
 
     // Redirect to chatbot with smooth transition
     window.redirectToChatbot = function(message) {
-      const overlay = document.createElement('div');
+      var overlay = document.createElement('div');
       overlay.className = 'page-transition-overlay fade-in';
       overlay.innerHTML = '<div class="transition-spinner"><svg viewBox="0 0 100 100" width="48" height="48"><circle cx="50" cy="50" r="45" fill="hsl(0,60%,35%)" /><circle cx="50" cy="50" r="45" fill="none" stroke="hsl(0,0%,90%)" stroke-width="2" /><path d="M 20 50 Q 35 20, 50 50 Q 65 80, 80 50" fill="none" stroke="hsl(0,0%,95%)" stroke-width="2.5" stroke-linecap="round" /></svg></div>';
       document.body.appendChild(overlay);
       
-      setTimeout(() => {
+      setTimeout(function() {
         window.location.href = 'chatbot.html?q=' + encodeURIComponent(message);
       }, 400);
     };
 
-    // Override chat form & suggestions for redirect
-    document.addEventListener('DOMContentLoaded', function() {
-      const chatForm = document.getElementById('chat-form');
-      if (chatForm) {
-        chatForm.addEventListener('submit', function(e) {
-          e.preventDefault();
-          const input = document.getElementById('chat-input');
-          if (input.value.trim()) redirectToChatbot(input.value.trim());
-        });
-      }
-      
-      document.addEventListener('click', function(e) {
-        if (e.target.classList.contains('suggestion-btn')) {
-          e.preventDefault();
-          e.stopPropagation();
-          redirectToChatbot(e.target.textContent);
-        }
-      }, true);
-    });
+    /*
+     * FIX: Override chat form & suggestions ONCE for redirect.
+     * No longer conflicts with initChatInterface since we removed
+     * the API-calling chat from the index page entirely.
+     * The chat section on index page is now redirect-only.
+     */
   </script>
 </body>
 </html>

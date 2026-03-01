@@ -10,13 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
   <link rel="stylesheet" href="style.css" />
-  <link rel="stylesheet" id="dynamic-css" />
-  <script>
-    // Detect if served from FastAPI (static mount) or opened directly
-    if (window.location.port === '8000' || window.location.pathname.startsWith('/chatbot')) {
-      document.getElementById('dynamic-css').href = '/static/style.css';
-    }
-  </script>
+  <!-- FIX: Removed duplicate dynamic CSS link and conditional second script load -->
   <style>
     /* =============================================
        CHATBOT PAGE — Enhanced Design
@@ -96,7 +90,7 @@
       overflow: hidden;
       display: flex;
       flex-direction: column;
-      box-shadow: 
+      box-shadow:
         0 24px 80px rgba(0, 0, 0, 0.5),
         0 0 0 1px hsla(220, 15%, 18%, 0.3),
         inset 0 1px 0 hsla(220, 15%, 25%, 0.15);
@@ -208,8 +202,6 @@
       border-radius: 50%;
       animation: pulse-glow 2s ease-in-out infinite;
     }
-
-
 
     /* Chat Messages Area */
     .chat-messages-area {
@@ -372,7 +364,6 @@
       .chat-header-bar { padding: 1rem; }
       .chat-messages-area { padding: 1rem; }
       .chat-input-section { padding: 1rem; }
-      .quick-actions { padding: 0.75rem 1rem; }
     }
   </style>
 </head>
@@ -455,22 +446,18 @@
     </div>
   </div>
 
+  <!-- Load shared formatMarkdown from script.js first, then chatbot.js -->
+  <script src="script.js"></script>
   <script src="chatbot.js"></script>
   <script>
-    // Also load from /static/ if served from FastAPI
-    if (window.location.port === '8000' || window.location.pathname.startsWith('/chatbot')) {
-      const s = document.createElement('script');
-      s.src = '/static/chatbot.js';
-      document.body.appendChild(s);
-    }
-  </script>
-  <script>
-    lucide.createIcons();
+    // Initialize Lucide icons for static HTML content
+    if (typeof lucide !== 'undefined') lucide.createIcons();
 
     // System status check
     function updateSystemStatus(state) {
-      const badge = document.getElementById('system-status');
-      const text = document.getElementById('status-text');
+      var badge = document.getElementById('system-status');
+      var text = document.getElementById('status-text');
+      if (!badge || !text) return;
       badge.className = 'system-status ' + state;
       if (state === 'active') text.textContent = 'Active';
       else if (state === 'loading') text.textContent = 'Loading';
@@ -478,23 +465,26 @@
     }
 
     // Check backend health
-    async function checkSystemHealth() {
+    function checkSystemHealth() {
       updateSystemStatus('loading');
-      try {
-        const res = await fetch('http://localhost:8000/health', { signal: AbortSignal.timeout(5000) });
-        if (res.ok) {
-          updateSystemStatus('active');
-        } else {
-          updateSystemStatus('inactive');
-        }
-      } catch (e) {
-        // No backend running — check if local mode works
-        if (typeof generateResponse === 'function') {
-          updateSystemStatus('active');
-        } else {
-          updateSystemStatus('inactive');
-        }
-      }
+
+      var controller = new AbortController();
+      var timeoutId = setTimeout(function() { controller.abort(); }, 5000);
+
+      fetch(API_BASE + '/health', { signal: controller.signal })
+        .then(function(res) {
+          clearTimeout(timeoutId);
+          updateSystemStatus(res.ok ? 'active' : 'inactive');
+        })
+        .catch(function() {
+          clearTimeout(timeoutId);
+          // No backend running — check if formatMarkdown exists (local mode)
+          if (typeof formatMarkdown === 'function') {
+            updateSystemStatus('active');
+          } else {
+            updateSystemStatus('inactive');
+          }
+        });
     }
 
     // Run check on load, then every 30s
@@ -503,34 +493,50 @@
 
     // Fade out page transition overlay
     window.addEventListener('load', function() {
-      const overlay = document.getElementById('page-overlay');
+      var overlay = document.getElementById('page-overlay');
       if (overlay) {
-        setTimeout(() => {
+        setTimeout(function() {
           overlay.classList.add('fade-out');
-          setTimeout(() => overlay.remove(), 600);
+          setTimeout(function() { overlay.remove(); }, 600);
         }, 200);
       }
     });
 
     // Back button smooth transition
-    document.getElementById('back-btn').addEventListener('click', function(e) {
-      e.preventDefault();
-      const overlay = document.createElement('div');
-      overlay.className = 'page-transition-overlay fade-in';
-      overlay.innerHTML = '<div class="transition-spinner"><svg viewBox="0 0 100 100" width="48" height="48"><circle cx="50" cy="50" r="45" fill="hsl(0,60%,35%)" /><circle cx="50" cy="50" r="45" fill="none" stroke="hsl(0,0%,90%)" stroke-width="2" /><path d="M 20 50 Q 35 20, 50 50 Q 65 80, 80 50" fill="none" stroke="hsl(0,0%,95%)" stroke-width="2.5" stroke-linecap="round" /></svg></div>';
-      document.body.appendChild(overlay);
-      setTimeout(() => { window.location.href = 'index.html'; }, 400);
-    });
-
-    // Handle initial query from URL
-    const urlParams = new URLSearchParams(window.location.search);
-    const initialQuery = urlParams.get('q');
-    if (initialQuery) {
-      setTimeout(() => {
-        document.getElementById('chatbot-input').value = initialQuery;
-        sendMessage(initialQuery);
-      }, 600);
+    var backBtn = document.getElementById('back-btn');
+    if (backBtn) {
+      backBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        var overlay = document.createElement('div');
+        overlay.className = 'page-transition-overlay fade-in';
+        overlay.innerHTML = '<div class="transition-spinner"><svg viewBox="0 0 100 100" width="48" height="48"><circle cx="50" cy="50" r="45" fill="hsl(0,60%,35%)" /><circle cx="50" cy="50" r="45" fill="none" stroke="hsl(0,0%,90%)" stroke-width="2" /><path d="M 20 50 Q 35 20, 50 50 Q 65 80, 80 50" fill="none" stroke="hsl(0,0%,95%)" stroke-width="2.5" stroke-linecap="round" /></svg></div>';
+        document.body.appendChild(overlay);
+        setTimeout(function() { window.location.href = 'index.html'; }, 400);
+      });
     }
+
+    // FIX: Handle initial query from URL — wait for sendMessage to be defined
+    (function handleInitialQuery() {
+      var urlParams = new URLSearchParams(window.location.search);
+      var initialQuery = urlParams.get('q');
+      if (!initialQuery) return;
+
+      // Poll until sendMessage is available (max 3 seconds)
+      var attempts = 0;
+      var maxAttempts = 30;
+      var pollInterval = setInterval(function() {
+        attempts++;
+        if (typeof window.sendMessage === 'function') {
+          clearInterval(pollInterval);
+          var inp = document.getElementById('chatbot-input');
+          if (inp) inp.value = initialQuery;
+          window.sendMessage(initialQuery);
+        } else if (attempts >= maxAttempts) {
+          clearInterval(pollInterval);
+          console.warn('sendMessage not available after timeout');
+        }
+      }, 100);
+    })();
   </script>
 </body>
 </html>
