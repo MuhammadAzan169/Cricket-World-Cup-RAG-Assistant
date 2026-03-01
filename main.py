@@ -1,80 +1,1233 @@
-# main.py
+"""
+Cricket World Cup Chatbot — Main CLI Application
+==================================================
+Interactive CLI-based RAG chatbot for ICC Cricket World Cup queries (2003–2023).
+
+Features:
+    - Semantic search over cricket match data
+    - AI-powered responses using OpenRouter
+    - Query classification and optimized retrieval
+    - Conversation history and context
+    - Interactive CLI with commands
+
+Usage:
+    python main.py                    # Interactive CLI
+    python main.py --query "Who won the 2011 World Cup?"
+    python main.py --status           # Show system status
+    python main.py --build-index      # Build/rebuild FAISS index
+"""
+
+import hashlib
+import json
+import logging
 import os
+import re
+import sys
 import time
-from data_processor import DataProcessor
-from embedding_manager import EmbeddingManager
-from vector_store import VectorStore
-from query_processor import QueryProcessor
-from config import DATA_DIR
+from collections import defaultdict
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Set, Tuple
 
-def initialize_system():
-    print("Initializing Cricket RAG System...")
+from dotenv import load_dotenv
 
-    if not os.path.exists(DATA_DIR):
-        raise FileNotFoundError(f"Data directory not found: {DATA_DIR}")
+# Load environment
+load_dotenv()
 
-    # Load JSON files
-    dp = DataProcessor()
-    dp.load_json_files()
-    if not dp.matches_data:
-        raise ValueError("No match data loaded. Place your JSON files in DATA_DIR.")
+from embeddings_utils import EmbeddingsManager
 
-    # Create text chunks
-    dp.create_chunks()
-    chunks, metadata = dp.get_chunks()
-    if not chunks:
-        raise ValueError("No chunks created from the dataset.")
+# ────────────────────────────────────────────────────────────
+# CHAT HISTORY
+# ────────────────────────────────────────────────────────────
 
-    # Initialize embedding manager and vector store
-    em = EmbeddingManager()
-    dim = em.get_embedding_dimension()
-    vs = VectorStore(dim)
+HISTORY_FILE = Path(__file__).parent / "history.txt"
 
-    if not vs.load_index():
-        print("Generating embeddings for chunks...")
-        t0 = time.time()
-        embeddings = em.get_embeddings(chunks, batch_size=64)
-        print(f"Embeddings generated in {time.time() - t0:.2f}s")
+def save_chat_history(question: str, answer: str, query_type: str = "unknown") -> None:
+    """Save chat history to history.txt file."""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        # Attach content explicitly to metadata
-        for i, m in enumerate(metadata):
-            if "content" not in m:
-                m["content"] = chunks[i]
+    # Format the entry
+    entry = f"""[{timestamp}] Query Type: {query_type}
+Question: {question}
+Answer: {answer}
+{'-' * 80}
 
-        vs.create_index(embeddings, metadata)
-        vs.save_index()
-    else:
-        print("Loaded existing FAISS index")
+"""
 
-    qp = QueryProcessor(em, vs)
-    return qp
+    # Append to history file
+    try:
+        with open(HISTORY_FILE, "a", encoding="utf-8") as f:
+            f.write(entry)
+    except Exception as e:
+        logger.warning(f"Failed to save chat history: {e}")
 
-def interactive_mode(qp: QueryProcessor):
-    print("\nCricket RAG System Ready. Type your question or 'quit' to exit.\n")
+# ────────────────────────────────────────────────────────────
+# LOGGING
+# ────────────────────────────────────────────────────────────
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s │ %(name)s │ %(levelname)s │ %(message)s",
+    datefmt="%H:%M:%S",
+)
+logger = logging.getLogger("cricket_chatbot")
+
+# ────────────────────────────────────────────────────────────
+# LLM CONFIGURATION
+# ────────────────────────────────────────────────────────────
+
+LLM_PROVIDER = os.getenv("LLM_PROVIDER")
+LLM_MODEL = os.getenv("LLM_MODEL")
+LLM_API_KEY = os.getenv("LLM_API_KEY")
+LLM_BASE_URL = os.getenv("LLM_BASE_URL")
+LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS"))
+LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE"))
+
+# Validate required environment variables (no fallbacks allowed)
+required_env_vars = ["LLM_PROVIDER", "LLM_MODEL", "LLM_API_KEY", "LLM_BASE_URL", "LLM_MAX_TOKENS", "LLM_TEMPERATURE"]
+missing_vars = [var for var in required_env_vars if os.getenv(var) is None]
+if missing_vars:
+    raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}. Please set them in .env file.")
+
+# ────────────────────────────────────────────────────────────
+# PLAYER NAME RESOLUTION
+# ────────────────────────────────────────────────────────────
+
+# Maps common names / nicknames → scorecard names used in the dataset
+PLAYER_ALIASES: Dict[str, List[str]] = {
+    "virat kohli": ["V Kohli", "Kohli"],
+    "kohli": ["V Kohli", "Kohli"],
+    "sachin tendulkar": ["SR Tendulkar", "Tendulkar", "Sachin"],
+    "sachin": ["SR Tendulkar", "Tendulkar", "Sachin"],
+    "tendulkar": ["SR Tendulkar", "Tendulkar"],
+    "ms dhoni": ["MS Dhoni", "Dhoni"],
+    "dhoni": ["MS Dhoni", "Dhoni"],
+    "rohit sharma": ["RG Sharma", "Rohit Sharma", "Rohit"],
+    "rohit": ["RG Sharma", "Rohit Sharma", "Rohit"],
+    "ricky ponting": ["RT Ponting", "Ponting", "Ricky Ponting"],
+    "ponting": ["RT Ponting", "Ponting"],
+    "kumar sangakkara": ["KC Sangakkara", "Sangakkara"],
+    "sangakkara": ["KC Sangakkara", "Sangakkara"],
+    "adam gilchrist": ["AC Gilchrist", "Gilchrist"],
+    "gilchrist": ["AC Gilchrist", "Gilchrist"],
+    "mitchell starc": ["MA Starc", "Starc", "Mitchell Starc"],
+    "starc": ["MA Starc", "Starc"],
+    "lasith malinga": ["SL Malinga", "Malinga", "Lasith Malinga"],
+    "malinga": ["SL Malinga", "Malinga"],
+    "glenn mcgrath": ["GD McGrath", "McGrath"],
+    "mcgrath": ["GD McGrath", "McGrath"],
+    "ab de villiers": ["AB de Villiers", "de Villiers"],
+    "de villiers": ["AB de Villiers", "de Villiers"],
+    "david warner": ["DA Warner", "Warner"],
+    "warner": ["DA Warner", "Warner"],
+    "yuvraj singh": ["Yuvraj Singh", "Yuvraj"],
+    "yuvraj": ["Yuvraj Singh", "Yuvraj"],
+    "ben stokes": ["BA Stokes", "Stokes", "Ben Stokes"],
+    "stokes": ["BA Stokes", "Stokes"],
+    "chris gayle": ["CH Gayle", "Gayle", "Chris Gayle"],
+    "gayle": ["CH Gayle", "Gayle"],
+    "shane warne": ["SK Warne", "Warne"],
+    "warne": ["SK Warne", "Warne"],
+    "brett lee": ["B Lee", "Lee"],
+    "wasim akram": ["Wasim Akram", "Akram"],
+    "akram": ["Wasim Akram", "Akram"],
+    "brian lara": ["BC Lara", "Lara", "Brian Lara"],
+    "lara": ["BC Lara", "Lara"],
+    "sourav ganguly": ["SC Ganguly", "Ganguly"],
+    "ganguly": ["SC Ganguly", "Ganguly"],
+    "eoin morgan": ["EJG Morgan", "Morgan", "Eoin Morgan"],
+    "morgan": ["EJG Morgan", "Morgan"],
+    "kane williamson": ["KS Williamson", "Williamson", "Kane Williamson"],
+    "williamson": ["KS Williamson", "Williamson"],
+    "babar azam": ["Babar Azam", "Babar"],
+    "babar": ["Babar Azam", "Babar"],
+    "pat cummins": ["PJ Cummins", "Cummins", "Pat Cummins"],
+    "cummins": ["PJ Cummins", "Cummins"],
+    "mohammed shami": ["Mohammed Shami", "Shami"],
+    "shami": ["Mohammed Shami", "Shami"],
+    "jasprit bumrah": ["JJ Bumrah", "Bumrah"],
+    "bumrah": ["JJ Bumrah", "Bumrah"],
+    "martin guptill": ["MJ Guptill", "Guptill"],
+    "guptill": ["MJ Guptill", "Guptill"],
+    "shakib al hasan": ["Shakib Al Hasan", "Shakib"],
+    "shakib": ["Shakib Al Hasan", "Shakib"],
+    "mahela jayawardene": ["DPMD Jayawardene", "Jayawardene"],
+    "jayawardene": ["DPMD Jayawardene", "Jayawardene"],
+    "muttiah muralitharan": ["M Muralitharan", "Muralitharan", "Murali"],
+    "muralitharan": ["M Muralitharan", "Muralitharan"],
+    "murali": ["M Muralitharan", "Muralitharan"],
+    "kevin o'brien": ["KJ O'Brien", "O'Brien"],
+    "travis head": ["TM Head", "Head", "Travis Head"],
+    "head": ["TM Head", "Head"],
+    "sehwag": ["V Sehwag", "Sehwag"],
+    "virender sehwag": ["V Sehwag", "Sehwag"],
+    "dravid": ["R Dravid", "Dravid"],
+    "rahul dravid": ["R Dravid", "Dravid"],
+}
+
+# Team name aliases
+TEAM_ALIASES: Dict[str, str] = {
+    "india": "India", "ind": "India", "indian": "India",
+    "australia": "Australia", "aus": "Australia", "aussies": "Australia",
+    "england": "England", "eng": "England", "english": "England",
+    "new zealand": "New Zealand", "nz": "New Zealand", "kiwis": "New Zealand",
+    "south africa": "South Africa", "sa": "South Africa", "proteas": "South Africa",
+    "pakistan": "Pakistan", "pak": "Pakistan",
+    "sri lanka": "Sri Lanka", "sl": "Sri Lanka", "lanka": "Sri Lanka",
+    "bangladesh": "Bangladesh", "ban": "Bangladesh",
+    "west indies": "West Indies", "wi": "West Indies", "windies": "West Indies",
+    "afghanistan": "Afghanistan", "afg": "Afghanistan",
+    "ireland": "Ireland", "ire": "Ireland",
+    "zimbabwe": "Zimbabwe", "zim": "Zimbabwe",
+    "netherlands": "Netherlands", "ned": "Netherlands", "holland": "Netherlands",
+    "scotland": "Scotland", "sco": "Scotland",
+    "kenya": "Kenya", "ken": "Kenya",
+    "canada": "Canada", "can": "Canada",
+    "namibia": "Namibia", "nam": "Namibia",
+    "bermuda": "Bermuda",
+    "uae": "United Arab Emirates", "united arab emirates": "United Arab Emirates",
+}
+
+
+def resolve_player_names(query: str) -> List[str]:
+    """Extract and resolve player names mentioned in a query."""
+    q = query.lower()
+    found = []
+    for alias, scorecard_names in PLAYER_ALIASES.items():
+        if alias in q:
+            found.extend(scorecard_names)
+    return list(set(found))
+
+
+def resolve_team_names(query: str) -> List[str]:
+    """Extract and resolve team names mentioned in a query."""
+    q = query.lower()
+    found = []
+    for alias, canonical in TEAM_ALIASES.items():
+        # Use word boundary matching for short aliases
+        if len(alias) <= 3:
+            if re.search(rf'\b{re.escape(alias)}\b', q):
+                found.append(canonical)
+        else:
+            if alias in q:
+                found.append(canonical)
+    return list(set(found))
+
+
+# ────────────────────────────────────────────────────────────
+# QUERY REWRITER — Handles context switching, ambiguity, corrections
+# ────────────────────────────────────────────────────────────
+
+class QueryRewriter:
+    """
+    Pre-processes user queries to handle:
+    - Self-corrections ("No, I meant...")
+    - Context switching ("Wait, I mean the 2007 final")
+    - Ambiguous references
+    - Temporal references ("yesterday", "last year")
+    """
+
+    CORRECTION_PATTERNS = [
+        r"(?:no|wait|actually|sorry|i mean|i meant|correction|clarify|not that)[,.]?\s*(?:i(?:'m)?\s+(?:asking|talking)\s+about\s+)?(.+)",
+        r".*?(?:but|however|actually)[,.]?\s+(?:i(?:'m)?\s+(?:asking|talking)\s+about\s+)?(.+)",
+    ]
+
+    @staticmethod
+    def rewrite(query: str, conversation_history: Optional[List[Dict[str, str]]] = None) -> str:
+        """
+        Rewrite / clean the user query for optimal retrieval.
+        Handles corrections, temporal references, and ambiguity.
+        """
+        q = query.strip()
+
+        # 1. Handle self-corrections — extract the corrected intent
+        q_lower = q.lower()
+        for pattern in QueryRewriter.CORRECTION_PATTERNS:
+            match = re.search(pattern, q_lower, re.IGNORECASE)
+            if match:
+                corrected = match.group(1).strip()
+                # Only use corrected part if it's substantial
+                if len(corrected) > 15:
+                    q = corrected
+                    break
+
+        # 2. Handle temporal references
+        q = QueryRewriter._resolve_temporal(q)
+
+        # 3. Clean up redundant phrasing
+        q = re.sub(r'^(can you |could you |please |tell me |i want to know |what is |what are )', '', q, flags=re.IGNORECASE).strip()
+
+        return q if q else query.strip()
+
+    @staticmethod
+    def _resolve_temporal(query: str) -> str:
+        """Replace temporal references with explicit notes."""
+        temporal_map = {
+            r"\byesterday'?s?\b": "(Note: no live/recent match data — World Cup data covers 2003-2023 tournaments only)",
+            r"\btoday'?s?\b": "(Note: no live/recent match data — World Cup data covers 2003-2023 tournaments only)",
+            r"\blast week\b": "(Note: World Cup data covers 2003-2023 tournaments only)",
+            r"\brecent(ly)?\b": "latest World Cup 2023",
+            r"\bcurrent\b": "2023",
+            r"\blatest\b": "2023",
+        }
+        for pattern, replacement in temporal_map.items():
+            if re.search(pattern, query, re.IGNORECASE):
+                query = re.sub(pattern, replacement, query, flags=re.IGNORECASE)
+        return query
+
+
+# ────────────────────────────────────────────────────────────
+# QUERY CLASSIFIER WITH ENHANCED PARAMETERS
+# ────────────────────────────────────────────────────────────
+
+class QueryClassifier:
+    """
+    Classifies user queries to optimize retrieval and prompt strategy.
+    """
+
+    STATISTICAL_PATTERNS = [
+        r"\b(most|highest|lowest|best|worst|top|maximum|minimum)\b",
+        r"\b(average|total|aggregate|leading|record)\b",
+        r"\b(how many|how much|count|number of)\b",
+        r"\b(runs|wickets|centuries|fifties|catches|sixes|fours)\b.*\b(most|top|highest)\b",
+        r"\b(table|list|ranking|rank|standings|leaderboard)\b",
+        r"\b(statistics|stats|figures|numbers)\b.*\b(world cup|wc)\b",
+        r"\b(strike rate|economy|average|run rate)\b",
+        r"\b(scored|took|conceded|made)\b.*\b(\d+)\b",
+    ]
+
+    COMPARATIVE_PATTERNS = [
+        r"\bcompare\b",
+        r"\bvs\.?\b|\bversus\b",
+        r"\bbetter\b|\bworse\b",
+        r"\bdifference\b.*\bbetween\b",
+        r"\b(\w+)\s+or\s+(\w+)\b.*\b(who|which|better)\b",
+        r"\bhead.?to.?head\b",
+    ]
+
+    MATCH_PATTERNS = [
+        r"\b(final|semi.?final|quarter.?final|group)\b.*\b(20\d{2})\b",
+        r"\b(20\d{2})\b.*\b(final|semi.?final|quarter.?final|group)\b",
+        r"\b(\w+)\s+vs\.?\s+(\w+)\b.*\b(20\d{2})\b",
+        r"\b(20\d{2})\b.*\b(\w+)\s+vs\.?\s+(\w+)\b",
+        r"\bmatch\s+number\b",
+    ]
+
+    TOURNAMENT_PATTERNS = [
+        r"\b(won|winner|champion)\b.*\b(world cup|wc|tournament)\b",
+        r"\b(world cup|wc|tournament)\b.*\b(won|winner|champion)\b",
+        r"\b(20\d{2})\s*(world cup|wc|tournament)\b",
+        r"\b(world cup|wc|tournament)\s*(20\d{2})\b",
+        r"\b(host|venue|format)\b.*\b(20\d{2})\b",
+        r"\b(finalists?|semi.?finalists?|runner.?up)\b",
+    ]
+
+    PLAYER_PATTERNS = [
+        r"\b(stats?|statistics?|performance|record|career)\b",
+        r"\b(sachin|tendulkar|kohli|virat|ponting|dhoni|rohit|warner|sangakkara|jayawardene|babar|starc|shami|cummins|gayle|malinga|mcgrath|stokes|morgan|williamson|sehwag|dravid|yuvraj|bumrah|guptill|de villiers|shakib|muralitharan|gilchrist|lee|warne|head|marsh)\b",
+        r"\b(batting|bowling|fielding)\s*(average|record|stats?)\b",
+        r"\b(player|batsman|batter|bowler|all.?rounder|fielder)\b",
+        r"\bplayer of the (match|tournament)\b",
+        r"\b(man of the match|mom|potm|pot)\b",
+    ]
+
+    AWARD_PATTERNS = [
+        r"\b(award|trophy|prize|spirit of cricket)\b",
+        r"\bplayer of the (tournament|series)\b",
+        r"\b(man of the match|mom|motm)\b.*\b(most|total|how many)\b",
+    ]
+
+    PROCEDURAL_PATTERNS = [
+        r"\b(rule|format|structure|stage|super.?(eight|six|over)|group|pool|knockout)\b",
+        r"\b(reserve day|dls|duckworth|rain|umpire|drs|review)\b",
+        r"\b(points?|carry|carried)\s*(forward|over)\b",
+        r"\b(toss|decision|bat first|field first|chose to)\b",
+        r"\b(semi.?finalist|quarter.?finalist|finalist)s?\b",
+        r"\b(venue|stadium|ground|host)\b",
+    ]
+
+    CROSS_TOURNAMENT_PATTERNS = [
+        r"\b(across|all|every|each)\b.*\b(world cup|tournament|edition)\b",
+        r"\b(2003|from)\b.*\b(to|through|until)\b.*\b(2023)\b",
+        r"\b2003.?2023\b",
+        r"\b(overall|career|total|all.?time|history|lifetime)\b",
+        r"\b(between|from)\s+\d{4}\s+(and|to)\s+\d{4}\b",
+        r"\bwhich\s+(world cup|tournament)\b",
+        r"\beach\s+(world cup|tournament|year|edition)\b",
+    ]
+
+    @staticmethod
+    def classify(query: str) -> str:
+        """Classify a query into a type for retrieval optimization."""
+        q = query.lower().strip()
+
+        # Check comparative first (often has "vs" which overlaps with match)
+        for pattern in QueryClassifier.COMPARATIVE_PATTERNS:
+            if re.search(pattern, q):
+                return "comparative"
+
+        for pattern in QueryClassifier.STATISTICAL_PATTERNS:
+            if re.search(pattern, q):
+                return "statistical"
+
+        for pattern in QueryClassifier.MATCH_PATTERNS:
+            if re.search(pattern, q):
+                return "match_specific"
+
+        for pattern in QueryClassifier.TOURNAMENT_PATTERNS:
+            if re.search(pattern, q):
+                return "tournament"
+
+        for pattern in QueryClassifier.PLAYER_PATTERNS:
+            if re.search(pattern, q):
+                return "player"
+
+        for pattern in QueryClassifier.AWARD_PATTERNS:
+            if re.search(pattern, q):
+                return "tournament"  # Awards are tournament-level info
+
+        for pattern in QueryClassifier.PROCEDURAL_PATTERNS:
+            if re.search(pattern, q):
+                return "tournament"  # Rules/format are tournament-level
+
+        # If specific player names are detected even without keyword markers
+        resolved_players = resolve_player_names(q)
+        if resolved_players:
+            return "player"
+
+        return "general"
+
+    @staticmethod
+    def is_cross_tournament(query: str) -> bool:
+        """Check if query spans multiple tournaments."""
+        q = query.lower().strip()
+        return any(
+            re.search(p, q) for p in QueryClassifier.CROSS_TOURNAMENT_PATTERNS
+        )
+
+    @staticmethod
+    def get_search_params(query_type: str, is_cross: bool = False) -> Dict[str, Any]:
+        """Get optimized search parameters based on query type."""
+        params = {
+            "statistical": {"top_k": 25, "score_threshold": 0.04},
+            "comparative": {"top_k": 25, "score_threshold": 0.04},
+            "match_specific": {"top_k": 15, "score_threshold": 0.06},
+            "tournament": {"top_k": 20, "score_threshold": 0.04},
+            "player": {"top_k": 25, "score_threshold": 0.04},
+            "general": {"top_k": 20, "score_threshold": 0.05},
+        }
+        p = params.get(query_type, params["general"]).copy()
+        if is_cross:
+            p["top_k"] = min(p["top_k"] + 15, 40)
+            p["score_threshold"] = max(p["score_threshold"] - 0.02, 0.02)
+        return p
+
+# ────────────────────────────────────────────────────────────
+# QUERY ENHANCEMENT UTILITIES
+# ────────────────────────────────────────────────────────────
+
+WORLD_CUP_YEARS = ["2003", "2007", "2011", "2015", "2019", "2023"]
+
+def enhance_query_with_years(query: str) -> str:
+    """
+    Enhance query by extracting and appending relevant years for better semantic search.
+    """
+    # Extract years mentioned in query
+    years_in_query = re.findall(r'\b(2003|2007|2011|2015|2019|2023)\b', query)
+    
+    # For tournament-wide questions, add all years
+    tournament_keywords = [
+        "between", "from.*to", "all", "each edition", "every world cup",
+        "all tournaments", "2003 to 2023", "2003-2023", "each year",
+        "across", "overall", "history", "all-time"
+    ]
+    
+    query_lower = query.lower()
+    if any(keyword in query_lower for keyword in tournament_keywords):
+        years_in_query.extend(WORLD_CUP_YEARS)
+    
+    # Add unique years to query
+    unique_years = list(set(years_in_query))
+    if unique_years:
+        enhanced_query = query + " ICC Cricket World Cup " + " ".join(unique_years)
+        return enhanced_query
+    
+    return query + " ICC Cricket World Cup"
+
+def generate_sub_queries(query: str, query_type: str) -> List[str]:
+    """
+    Generate multiple sub-queries for comprehensive retrieval.
+    Especially useful for cross-tournament, comparative, and player queries.
+    Uses entity extraction for targeted searches.
+    """
+    queries = [query]
+    q_lower = query.lower()
+    
+    # Extract entities for targeted retrieval
+    resolved_players = resolve_player_names(query)
+    resolved_teams = resolve_team_names(query)
+    mentioned_years = re.findall(r'\b(2003|2007|2011|2015|2019|2023)\b', query)
+    
+    # Check if it's a cross-tournament query
+    is_cross = QueryClassifier.is_cross_tournament(query)
+    
+    # ── Player queries: search for each player's stats + their match appearances ──
+    if query_type == "player" or resolved_players:
+        for player in resolved_players[:3]:  # Limit to top 3
+            queries.append(f"Player: {player} batting bowling statistics world cup")
+            queries.append(f"{player} performance runs wickets world cup")
+            if mentioned_years:
+                for year in mentioned_years:
+                    queries.append(f"{player} {year} world cup match performance")
+            elif is_cross:
+                for year in WORLD_CUP_YEARS:
+                    queries.append(f"{player} {year} world cup")
+        # Also search the all_player_statistics file
+        queries.append(f"ICC Cricket World Cup Player Statistics {' '.join(resolved_players[:2])}")
+    
+    # ── Cross-tournament queries: search each year ──
+    if is_cross:
+        years_to_search = mentioned_years if mentioned_years else WORLD_CUP_YEARS
+        for year in years_to_search:
+            sub_q = re.sub(
+                r'\b(across all|from \d{4} to \d{4}|2003.?2023|all world cups?|every world cup|each world cup)\b',
+                f'{year}',
+                q_lower,
+                flags=re.IGNORECASE
+            )
+            if sub_q != q_lower:
+                queries.append(f"{sub_q} {year} world cup tournament summary")
+            else:
+                queries.append(f"{query} {year} world cup")
+        
+        # Also search for tournament summaries directly
+        queries.append("ICC Cricket World Cup tournament summary winners 2003 2007 2011 2015 2019 2023")
+        queries.append("team performance standings win percentage all world cups")
+    
+    # ── Comparative queries: search each entity separately ──
+    if query_type == "comparative":
+        for player in resolved_players[:2]:
+            queries.append(f"Player: {player} batting bowling world cup statistics career")
+        for team in resolved_teams[:2]:
+            queries.append(f"{team} world cup team performance wins losses")
+        if resolved_players:
+            queries.append(f"ICC Cricket World Cup Player Statistics {' '.join(resolved_players[:2])}")
+    
+    # ── Statistical queries: targeted searches ──
+    if query_type == "statistical":
+        queries.append(f"{query} tournament summary team performance")
+        if "captain" in q_lower:
+            queries.append("captain performance win percentage world cup captaincy record")
+            for year in WORLD_CUP_YEARS:
+                queries.append(f"Captain Performance {year} World Cup")
+        if any(w in q_lower for w in ["century", "centuries", "hundred", "100"]):
+            queries.append("centuries scored world cup batting highlights hundred")
+            queries.append("ICC Cricket World Cup Player Statistics centuries")
+        if any(w in q_lower for w in ["run", "runs", "scorer", "batting"]):
+            queries.append("top run scorer batting world cup player statistics")
+            queries.append("ICC Cricket World Cup Player Statistics batting runs average")
+        if any(w in q_lower for w in ["wicket", "bowling", "bowler", "economy"]):
+            queries.append("top wicket taker bowling world cup player statistics economy")
+            queries.append("ICC Cricket World Cup Player Statistics bowling wickets")
+        if any(w in q_lower for w in ["six", "sixes", "four", "fours", "boundary"]):
+            queries.append("ICC Cricket World Cup Player Statistics sixes fours batting")
+        if any(w in q_lower for w in ["death", "powerplay", "middle"]):
+            queries.append("death overs powerplay bowling batting statistics analysis")
+        if any(w in q_lower for w in ["extras", "wide", "no ball"]):
+            queries.append("extras conceded world cup team performance statistics")
+        if any(w in q_lower for w in ["hat trick", "hat-trick"]):
+            queries.append("hat trick hat-trick world cup bowling")
+        if any(w in q_lower for w in ["defend", "chase", "total", "score"]):
+            queries.append("defended total chased world cup match results scores")
+        if any(w in q_lower for w in ["partnership", "opening", "pair"]):
+            queries.append("opening partnership batting pair world cup runs")
+        if any(w in q_lower for w in ["win loss", "win-loss", "ratio", "record"]):
+            for team in resolved_teams:
+                queries.append(f"{team} world cup wins losses matches team performance")
+    
+    # ── Match-specific queries: search for the specific match ──
+    if query_type == "match_specific":
+        for team in resolved_teams:
+            year_str = " ".join(mentioned_years) if mentioned_years else ""
+            queries.append(f"{team} {year_str} world cup match")
+        # Search for specific match stages
+        for stage in ["final", "semi-final", "quarter-final"]:
+            if stage in q_lower or stage.replace("-", " ") in q_lower:
+                for year in (mentioned_years or WORLD_CUP_YEARS):
+                    queries.append(f"{year} {stage} world cup match result")
+    
+    # ── Tournament queries: fetch tournament summaries ──
+    if query_type == "tournament":
+        for year in (mentioned_years or WORLD_CUP_YEARS):
+            queries.append(f"ICC Cricket World Cup {year} Tournament Summary")
+        if any(w in q_lower for w in ["player of tournament", "player of the tournament", "pot", "award"]):
+            for year in (mentioned_years or WORLD_CUP_YEARS):
+                queries.append(f"Player of Tournament {year} World Cup award")
+        if any(w in q_lower for w in ["semi-finalist", "semifinalist", "finalist"]):
+            for year in (mentioned_years or WORLD_CUP_YEARS):
+                queries.append(f"Semi-finalists Finalists {year} World Cup")
+        if any(w in q_lower for w in ["venue", "stadium", "ground", "host"]):
+            queries.append("venue stadium host world cup")
+        if any(w in q_lower for w in ["format", "rule", "structure", "super", "reserve"]):
+            for year in (mentioned_years or WORLD_CUP_YEARS):
+                queries.append(f"Format structure rules {year} World Cup")
+    
+    # ── Team-specific queries ──
+    if resolved_teams and query_type not in ("match_specific",):
+        for team in resolved_teams[:2]:
+            queries.append(f"{team} world cup team performance wins losses run scored")
+            if is_cross or not mentioned_years:
+                for year in WORLD_CUP_YEARS:
+                    queries.append(f"{team} {year} world cup team performance")
+    
+    # ── Obscure detail queries: add very specific keyword searches ──
+    obscure_keywords = ["unusual", "rare", "dismissal", "obstructing", "handled", "retired hurt",
+                        "controversial", "umpire", "drs", "boundary rope", "run out"]
+    if any(kw in q_lower for kw in obscure_keywords):
+        queries.append(f"{query} key moments match highlights")
+        if mentioned_years:
+            for year in mentioned_years:
+                queries.append(f"{year} world cup key moments match highlights unusual")
+    
+    # Remove duplicates while preserving order
+    seen = set()
+    unique_queries = []
+    for sq in queries:
+        sq_normalized = sq.strip().lower()
+        if sq_normalized not in seen:
+            seen.add(sq_normalized)
+            unique_queries.append(sq)
+    
+    return unique_queries
+    return unique_queries
+
+def validate_context_coverage(context_text: str, query: str) -> str:
+    """
+    Check if retrieved context covers relevant years and return coverage note.
+    """
+    # Extract all tournament years from context
+    years_in_context = set()
+    for year in WORLD_CUP_YEARS:
+        if year in context_text:
+            years_in_context.add(year)
+    
+    # Extract years mentioned in query
+    query_years = set(re.findall(r'\b(2003|2007|2011|2015|2019|2023)\b', query))
+    
+    # Check for tournament-wide queries
+    is_cross = QueryClassifier.is_cross_tournament(query)
+    
+    if is_cross:
+        all_years = set(WORLD_CUP_YEARS)
+        missing_years = all_years - years_in_context
+        if missing_years:
+            return f"Note: Retrieved context covers years: {', '.join(sorted(years_in_context))}. Missing: {', '.join(sorted(missing_years))}."
+    
+    elif query_years:
+        missing_years = query_years - years_in_context
+        if missing_years:
+            return f"Note: Context is missing data for year(s): {', '.join(sorted(missing_years))}."
+    
+    return ""
+
+# ────────────────────────────────────────────────────────────
+# LLM CLIENT
+# ────────────────────────────────────────────────────────────
+
+class LLMClient:
+    """
+    LLM client using OpenRouter (or any OpenAI-compatible API).
+    """
+
+    def __init__(
+        self,
+        api_key: str = LLM_API_KEY,
+        model: str = LLM_MODEL,
+        base_url: str = LLM_BASE_URL,
+        max_tokens: int = LLM_MAX_TOKENS,
+        temperature: float = LLM_TEMPERATURE,
+    ):
+        self.model = model
+        self.max_tokens = max_tokens
+        self.temperature = temperature
+        self._api_key = api_key
+        self._base_url = base_url
+        self._client = None
+
+    def _get_client(self):
+        """Lazy-initialize the OpenAI client."""
+        if self._client is None:
+            try:
+                import openai
+                self._client = openai.OpenAI(
+                    api_key=self._api_key,
+                    base_url=self._base_url,
+                )
+            except ImportError:
+                raise ImportError("openai package required. Install with: pip install openai")
+        return self._client
+
+    def generate(
+        self,
+        system_prompt: str,
+        user_message: str,
+        conversation_history: Optional[List[Dict[str, str]]] = None,
+    ) -> str:
+        """
+        Generate a response from the LLM.
+        """
+        if not self._api_key or self._api_key in ("your_api_key_here", ""):
+            return (
+                "⚠️ LLM API key not configured.\n"
+                "Please set LLM_API_KEY in your .env file.\n"
+                "Get a key from https://openrouter.ai/keys"
+            )
+
+        messages = [{"role": "system", "content": system_prompt}]
+
+        # Add conversation history (last 6 turns max)
+        if conversation_history:
+            messages.extend(conversation_history[-6:])
+
+        messages.append({"role": "user", "content": user_message})
+
+        # Dynamically increase max tokens for complex queries with lots of context
+        effective_max_tokens = self.max_tokens
+        system_len = len(system_prompt)
+        if system_len > 15000:
+            effective_max_tokens = max(self.max_tokens, 4000)
+        elif system_len > 10000:
+            effective_max_tokens = max(self.max_tokens, 3000)
+        elif system_len > 6000:
+            effective_max_tokens = max(self.max_tokens, 2500)
+        elif system_len > 4000:
+            effective_max_tokens = max(self.max_tokens, 2000)
+
+        try:
+            client = self._get_client()
+            total_chars = sum(len(m.get("content", "")) for m in messages)
+            logger.info(f"LLM request: {len(messages)} messages, ~{total_chars} chars, max_tokens={effective_max_tokens}")
+            response = client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                max_tokens=effective_max_tokens,
+                temperature=self.temperature,
+            )
+            answer = (response.choices[0].message.content or "").strip()
+            logger.info(f"LLM response: {len(answer)} chars")
+            return answer or "I could not generate a response. Please try rephrasing your question."
+
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"LLM error: {error_msg}")
+            if "401" in error_msg or "unauthorized" in error_msg.lower():
+                return "⚠️ Invalid API key. Please check your LLM_API_KEY in .env"
+            if "429" in error_msg or "rate" in error_msg.lower():
+                return "⚠️ Rate limit reached. Please wait and try again."
+            return f"⚠️ LLM Error: {error_msg}"
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(
+            self._api_key
+            and self._api_key not in ("your_api_key_here", "")
+        )
+
+# ────────────────────────────────────────────────────────────
+# ENHANCED PROMPT TEMPLATES
+# ────────────────────────────────────────────────────────────
+
+class PromptTemplates:
+    """Enhanced prompt templates for natural, comprehensive answers."""
+
+    BASE_SYSTEM = """You are a world-class Cricket World Cup analyst, commentator, and historian. You have encyclopedic knowledge of ICC Cricket World Cup tournaments from 2003 to 2023 — every match, every player, every record, every dramatic moment.
+
+**YOUR CORE APPROACH:**
+
+1. **CONTEXT DATA IS YOUR PRIMARY SOURCE**: The CONTEXT DATA below comes from a comprehensive cricket database. Use it as your authoritative, primary source. Facts from context data take ABSOLUTE priority over your general knowledge.
+
+2. **BLEND WITH YOUR KNOWLEDGE**: When the context data is incomplete, doesn't cover all aspects, or lacks granular details — SEAMLESSLY supplement with your own deep cricket knowledge. Do NOT mention "the database" or "the dataset" or "my context" to the user. Just answer naturally, as if you know everything.
+
+3. **AGGREGATION**: If the question asks about data across multiple tournaments/years, CAREFULLY gather and combine information from ALL relevant context chunks. Don't just report from the first chunk you find. Scan ALL provided context.
+
+4. **NEVER REFUSE OR DEFLECT**: You are a cricket expert. NEVER say:
+   - "I don't have information about that"
+   - "This information is not in my database"
+   - "I couldn't find this in the provided data"
+   - "Based on the context provided..."
+   Instead, answer confidently using whatever combination of context + knowledge is needed.
+
+5. **NATURAL CONVERSATIONAL TONE**: Write like a passionate, knowledgeable cricket analyst having a conversation with a fellow fan. Be warm, engaging, and authoritative. Use vivid language. Share the story behind the numbers.
+
+6. **COMPLETENESS**: Always give a COMPLETE answer. If asked about multiple tournaments, cover ALL of them. If asked for a comparison, compare ALL relevant dimensions. Don't leave gaps.
+
+7. **SMART FORMATTING**:
+   - Use **bold** for key names, numbers, and facts
+   - Use markdown tables for comparisons, rankings, and statistics
+   - Use bullet points for lists
+   - Use emojis sparingly for flair (🏏, 🏆, ⭐)
+   - Break long answers into clear sections
+
+8. **ACCURACY**: When context data provides specific numbers (runs, wickets, averages, scores), use those EXACT numbers. When supplementing from knowledge, be as accurate as possible.
+
+9. **WORLD CUP COVERAGE**: ICC Cricket World Cup tournaments: 2003 (South Africa), 2007 (West Indies), 2011 (India/Sri Lanka/Bangladesh), 2015 (Australia/New Zealand), 2019 (England), 2023 (India).
+
+10. **PLAYER NAME NOTE**: Players in the database use scorecard format (e.g., "V Kohli" = Virat Kohli, "RT Ponting" = Ricky Ponting, "SR Tendulkar" = Sachin Tendulkar, "MS Dhoni" = MS Dhoni, "RG Sharma" = Rohit Sharma). Use full names in your response."""
+
+    @staticmethod
+    def get_system_prompt(query_type: str, context: str, coverage_note: str = "") -> str:
+        """Get query-type-specific system prompt with context."""
+        
+        type_instructions = {
+            "statistical": """
+**STATISTICAL QUERY INSTRUCTIONS**:
+- The user wants specific numbers, records, or rankings.
+- CAREFULLY scan ALL context data to extract every relevant statistic.
+- Present data in a clean markdown table when appropriate.
+- Include exact numbers: runs, averages, strike rates, wickets, etc.
+- If the context has partial data, present what's available AND fill gaps from your knowledge — but do it seamlessly.
+- For "most/best/highest" queries: list ALL candidates you can find, then declare the answer.
+- For aggregate queries (e.g., "total across all WCs"), SUM the data from each tournament/match.
+- If asked about a calculated stat (economy rate, average, percentage), COMPUTE it from available data.""",
+
+            "comparative": """
+**COMPARISON QUERY INSTRUCTIONS**:
+- Create a clear side-by-side comparison table.
+- Include ALL relevant metrics for both subjects (runs, average, SR, centuries, wickets, etc.).
+- Cover ALL tournaments/years where both subjects participated.
+- Provide analytical insights — don't just list numbers, tell the story.
+- End with a clear, well-reasoned verdict about who comes out ahead and why.
+- If comparing across tournaments, show year-by-year breakdown.""",
+
+            "match_specific": """
+**MATCH QUERY INSTRUCTIONS**:
+- Provide complete match details: teams, venue, date, toss, result, margin.
+- Include scorecard highlights: top batters with runs(balls), top bowlers with figures.
+- Mention Player of the Match and key turning points.
+- Tell the STORY of the match — what made it special, dramatic, or memorable.
+- Include specific moments like crucial wickets, big partnerships, last-over drama.
+- If asked about an obscure detail (unusual dismissal, specific over, etc.), look carefully in the Key Moments section of the context.""",
+
+            "tournament": """
+**TOURNAMENT QUERY INSTRUCTIONS**:
+- Include: Winner, Runner-up, Semi-finalists, Host country/countries, Format.
+- Key awards: Player of Tournament, Top Run Scorer, Top Wicket Taker.
+- Team standings with Played/Won/Lost/Win%.
+- Captain information.
+- If asked about rules/format/structure, explain the tournament structure clearly.
+- If asked about awards, provide the specific award winner(s).
+- For cross-tournament queries, present data for ALL relevant years in a table.""",
+
+            "player": """
+**PLAYER QUERY INSTRUCTIONS**:
+- Present COMPLETE career statistics: Matches, Innings, Runs, Average, Strike Rate, Centuries, Fifties, Highest Score.
+- Include bowling stats if the player bowled: Wickets, Average, Economy, Best figures.
+- List which World Cups they played in and their role.
+- Highlight their BEST performances — mention specific match details.
+- For cross-tournament player queries: show year-by-year breakdown table.
+- Include captaincy records if applicable.
+- Tell the player's World Cup STORY — their journey, peaks, memorable moments.""",
+
+            "general": """
+**GENERAL QUERY INSTRUCTIONS**:
+- Provide a comprehensive, well-rounded answer.
+- Use context data as the foundation, supplement with your cricket knowledge.
+- Be engaging, informative, and conversational.
+- Structure your answer logically with clear sections.""",
+        }
+
+        instruction = type_instructions.get(query_type, type_instructions["general"])
+
+        context_section = context if context else "No specific data was retrieved for this query. Use your expert cricket knowledge to provide a helpful, accurate answer about ICC Cricket World Cups (2003-2023)."
+        
+        coverage_section = f"\n\n**DATA COVERAGE NOTE**: {coverage_note}" if coverage_note else ""
+
+        return f"""{PromptTemplates.BASE_SYSTEM}
+
+{instruction}
+{coverage_section}
+
+--- CONTEXT DATA START ---
+{context_section}
+--- CONTEXT DATA END ---
+
+IMPORTANT REMINDERS:
+- Give a COMPLETE, NATURAL answer. Never say you can't answer or that data is missing.
+- Use context data as primary source, blend with your knowledge seamlessly.
+- For aggregate/cross-tournament questions, carefully combine data from ALL relevant context chunks.
+- Be a cricket expert talking to a fan — warm, passionate, authoritative."""
+
+# ────────────────────────────────────────────────────────────
+# CRICKET CHATBOT
+# ────────────────────────────────────────────────────────────
+
+class CricketChatbot:
+    """
+    Main chatbot orchestrating embeddings search, query classification,
+    RAG, and LLM response generation.
+    """
+
+    def __init__(self):
+        self._embeddings: Optional[EmbeddingsManager] = None
+        self._llm: Optional[LLMClient] = None
+        self._classifier = QueryClassifier()
+        self._rewriter = QueryRewriter()
+        self._conversation_history: List[Dict[str, str]] = []
+        self._initialized = False
+
+    def initialize(self) -> None:
+        """Initialize all components: embeddings + LLM."""
+        logger.info("═" * 50)
+        logger.info("  Initializing Cricket World Cup Chatbot")
+        logger.info("═" * 50)
+
+        # Initialize embeddings manager
+        self._embeddings = EmbeddingsManager()
+        self._embeddings.initialize()
+
+        # Initialize LLM client
+        self._llm = LLMClient()
+
+        self._initialized = True
+
+        # Status report
+        stats = self._embeddings.get_stats()
+        logger.info(f"  Vectors loaded:  {stats['total_vectors']}")
+        logger.info(f"  Chunks loaded:   {stats['total_chunks']}")
+        logger.info(f"  LLM model:       {self._llm.model}")
+        logger.info(f"  LLM configured:  {self._llm.is_configured}")
+        logger.info("═" * 50)
+
+    def ask(self, question: str) -> Dict[str, Any]:
+        """
+        Process a user question through the full RAG pipeline.
+        Uses query rewriting, entity extraction, multi-query search,
+        and intelligent context assembly.
+        """
+        if not self._initialized:
+            raise RuntimeError("Chatbot not initialized. Call initialize() first.")
+
+        start_time = time.time()
+        question = question.strip()
+
+        if not question:
+            return {
+                "answer": "Please enter a question about Cricket World Cups (2003–2023).",
+                "query_type": "empty",
+                "sources": [],
+                "search_results": 0,
+                "processing_time": 0.0,
+            }
+
+        # Step 1: Rewrite query (handle corrections, temporal refs, ambiguity)
+        rewritten_query = self._rewriter.rewrite(question, self._conversation_history)
+        if rewritten_query != question:
+            logger.info(f"Query rewritten: '{question[:60]}...' → '{rewritten_query[:60]}...'")
+
+        # Step 2: Classify query
+        query_type = self._classifier.classify(rewritten_query)
+        is_cross = self._classifier.is_cross_tournament(rewritten_query)
+        search_params = self._classifier.get_search_params(query_type, is_cross)
+        logger.info(f"Query type: {query_type} | Cross-tournament: {is_cross} | Params: {search_params}")
+
+        # Step 3: Extract entities for targeted retrieval
+        resolved_players = resolve_player_names(rewritten_query)
+        resolved_teams = resolve_team_names(rewritten_query)
+        logger.info(f"Entities — Players: {resolved_players[:3]}, Teams: {resolved_teams[:3]}")
+
+        # Step 4: Generate sub-queries for comprehensive retrieval
+        sub_queries = generate_sub_queries(rewritten_query, query_type)
+        
+        # Step 5: Enhance each sub-query with years
+        enhanced_queries = [enhance_query_with_years(sq) for sq in sub_queries]
+        
+        # Cap the number of sub-queries to avoid excessive search
+        max_sub_queries = 20 if is_cross else 12
+        enhanced_queries = enhanced_queries[:max_sub_queries]
+        
+        logger.info(f"Searching with {len(enhanced_queries)} sub-queries")
+
+        # Step 6: Multi-query semantic search
+        if len(enhanced_queries) > 1:
+            context_text, sources = self._embeddings.multi_query_context(
+                queries=enhanced_queries,
+                top_k=search_params["top_k"],
+                score_threshold=search_params["score_threshold"],
+                max_total=25,
+            )
+        else:
+            context_text, sources = self._embeddings.get_context_text(
+                query=enhanced_queries[0],
+                top_k=search_params["top_k"],
+                score_threshold=search_params["score_threshold"],
+            )
+
+        # Step 6b: Smart context truncation — prioritize highest-scoring chunks
+        MAX_CONTEXT_CHARS = 12000
+        if len(context_text) > MAX_CONTEXT_CHARS:
+            logger.info(f"Context truncated from {len(context_text)} to ~{MAX_CONTEXT_CHARS} chars")
+            # Split into chunks, keep the highest-quality ones that fit
+            context_parts = context_text.split("\n\n---\n\n")
+            kept_parts = []
+            total_len = 0
+            for part in context_parts:
+                if total_len + len(part) + 10 > MAX_CONTEXT_CHARS:
+                    break
+                kept_parts.append(part)
+                total_len += len(part) + 10
+            context_text = "\n\n---\n\n".join(kept_parts)
+            if len(kept_parts) < len(context_parts):
+                context_text += f"\n\n[... {len(context_parts) - len(kept_parts)} additional context chunks omitted for brevity ...]"
+
+        # Step 7: Validate context coverage
+        coverage_note = validate_context_coverage(context_text, rewritten_query)
+
+        # Step 8: Build prompt
+        system_prompt = PromptTemplates.get_system_prompt(
+            query_type, context_text, coverage_note
+        )
+
+        # Step 9: Generate LLM response
+        answer = self._llm.generate(
+            system_prompt=system_prompt,
+            user_message=question,  # Send original question to LLM (more natural)
+            conversation_history=self._conversation_history,
+        )
+
+        # Step 10: Save to chat history file
+        save_chat_history(question, answer, query_type)
+
+        # Step 11: Update conversation history
+        self._conversation_history.append({"role": "user", "content": question})
+        self._conversation_history.append({"role": "assistant", "content": answer})
+
+        # Keep history manageable (last 10 turns = 20 messages)
+        if len(self._conversation_history) > 20:
+            self._conversation_history = self._conversation_history[-20:]
+
+        processing_time = round(time.time() - start_time, 2)
+
+        return {
+            "answer": answer,
+            "query_type": query_type,
+            "sources": sources,
+            "search_results": len(sources),
+            "processing_time": processing_time,
+        }
+
+    def build_index(self, force_rebuild: bool = False) -> Dict[str, int]:
+        """Build or rebuild the FAISS index from Cricket Data."""
+        if not self._initialized:
+            self._embeddings = EmbeddingsManager()
+            self._embeddings.initialize()
+            self._initialized = True
+
+        return self._embeddings.build_index(force_rebuild=force_rebuild)
+
+    def clear_history(self) -> None:
+        """Clear conversation history."""
+        self._conversation_history.clear()
+
+        # Also clear the history file
+        try:
+            if HISTORY_FILE.exists():
+                HISTORY_FILE.unlink()  # Delete the file
+                logger.info("Chat history file cleared")
+        except Exception as e:
+            logger.warning(f"Failed to clear chat history file: {e}")
+
+        logger.info("Conversation history cleared")
+
+    def get_status(self) -> Dict[str, Any]:
+        """Get full chatbot status."""
+        status = {
+            "initialized": self._initialized,
+            "llm_model": LLM_MODEL,
+            "llm_provider": LLM_PROVIDER,
+            "llm_configured": self._llm.is_configured if self._llm else False,
+            "conversation_turns": len(self._conversation_history) // 2,
+        }
+        if self._embeddings:
+            status.update(self._embeddings.get_stats())
+        return status
+
+# ────────────────────────────────────────────────────────────
+# CLI INTERFACE
+# ────────────────────────────────────────────────────────────
+
+def print_banner():
+    """Print welcome banner."""
+    print()
+    print("╔══════════════════════════════════════════════════════╗")
+    print("║     🏏 ICC Cricket World Cup Chatbot (2003–2023)    ║")
+    print("║         Powered by RAG + Semantic Search            ║")
+    print("╠══════════════════════════════════════════════════════╣")
+    print("║  Commands:                                          ║")
+    print("║    /status  — Show system status                    ║")
+    print("║    /history — Show chat history                     ║")
+    print("║    /clear   — Clear conversation history            ║")
+    print("║    /build   — Rebuild embeddings index              ║")
+    print("║    /help    — Show this help                        ║")
+    print("║    /quit    — Exit chatbot                          ║")
+    print("╚══════════════════════════════════════════════════════╝")
+    print()
+
+
+def print_answer(result: Dict[str, Any]):
+    """Pretty-print a chatbot response."""
+    print()
+    print("─" * 55)
+    print(result["answer"])
+    print("─" * 55)
+    print()
+
+
+def print_status(chatbot: CricketChatbot):
+    """Print system status."""
+    status = chatbot.get_status()
+    print()
+    print("┌─────────────────────────────────────┐")
+    print("│         System Status                │")
+    print("├─────────────────────────────────────┤")
+    for key, value in status.items():
+        label = key.replace("_", " ").title()
+        print(f"│  {label:<20} {str(value):>14} │")
+    print("└─────────────────────────────────────┘")
+    print()
+
+
+def interactive_cli(chatbot: CricketChatbot):
+    """Run the interactive CLI chatbot loop."""
+    print_banner()
+
     while True:
         try:
-            query = input("Your question: ").strip()
-            if query.lower() in ("quit", "exit", "q"):
-                print("Exiting...")
-                break
-            if not query:
-                continue
-
-            t0 = time.time()
-            ans = qp.process_query(query, max_results=60)
-            print(f"\nAnswer (took {time.time() - t0:.2f}s):\n{ans}\n")
-        except KeyboardInterrupt:
-            print("\nInterrupted by user. Exiting...")
+            user_input = input("🏏 You: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\n\nGoodbye! 🏏")
             break
-        except Exception as e:
-            print(f"Error processing query: {e}")
+
+        if not user_input:
+            continue
+
+        # Handle commands
+        cmd = user_input.lower()
+
+        if cmd in ("/quit", "/exit", "/q"):
+            print("\nGoodbye! 🏏")
+            break
+
+        elif cmd == "/help":
+            print_banner()
+            continue
+
+        elif cmd == "/status":
+            print_status(chatbot)
+            continue
+
+        elif cmd == "/clear":
+            chatbot.clear_history()
+            print("  ✓ Conversation history cleared\n")
+            continue
+
+        elif cmd == "/history":
+            if HISTORY_FILE.exists():
+                print("  Chat History:")
+                print("  " + "=" * 50)
+                try:
+                    with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+                        content = f.read()
+                        if content.strip():
+                            print(content)
+                        else:
+                            print("  No chat history found.")
+                except Exception as e:
+                    print(f"  Error reading history: {e}")
+            else:
+                print("  No chat history file found.")
+            print()
+            continue
+
+        elif cmd == "/build":
+            print("  Building index (this may take a few minutes)...")
+            stats = chatbot.build_index()
+            print(f"  ✓ Index built: {stats.get('chunks_created', 0)} chunks, "
+                  f"{stats.get('vectors_added', 0)} vectors\n")
+            continue
+
+        elif cmd.startswith("/"):
+            print(f"  Unknown command: {cmd}. Type /help for available commands.\n")
+            continue
+
+        # Process question
+        print("  Thinking...", end="", flush=True)
+        result = chatbot.ask(user_input)
+        print("\r" + " " * 20 + "\r", end="")  # Clear "Thinking..."
+        print_answer(result)
+
 
 def main():
-    try:
-        qp = initialize_system()
-        interactive_mode(qp)
-    except Exception as e:
-        print(f"Initialization failed: {e}")
+    """Main entry point with CLI argument handling."""
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="ICC Cricket World Cup Chatbot (2003–2023)"
+    )
+    parser.add_argument(
+        "--query", "-q",
+        type=str,
+        help="Ask a single question (non-interactive mode)"
+    )
+    parser.add_argument(
+        "--build-index",
+        action="store_true",
+        help="Build/rebuild the FAISS embeddings index"
+    )
+    parser.add_argument(
+        "--force-rebuild",
+        action="store_true",
+        help="Force full index rebuild (wipes existing)"
+    )
+    parser.add_argument(
+        "--status",
+        action="store_true",
+        help="Show system status and exit"
+    )
+
+    args = parser.parse_args()
+
+    chatbot = CricketChatbot()
+
+    # Handle --build-index
+    if args.build_index:
+        chatbot.initialize()
+        print("Building embeddings index from Cricket World Cup data...")
+        stats = chatbot.build_index(force_rebuild=args.force_rebuild)
+        print(f"\n✓ Index built successfully!")
+        print(f"  Files processed:     {stats.get('files_processed', 0)}")
+        print(f"  Chunks created:      {stats.get('chunks_created', 0)}")
+        print(f"  Duplicates skipped:  {stats.get('chunks_skipped_duplicate', 0)}")
+        print(f"  Vectors added:       {stats.get('vectors_added', 0)}")
+        print(f"  Errors:              {stats.get('errors', 0)}")
+        return
+
+    # Initialize chatbot
+    chatbot.initialize()
+
+    # Handle --status
+    if args.status:
+        print_status(chatbot)
+        return
+
+    # Handle --query (single question mode)
+    if args.query:
+        result = chatbot.ask(args.query)
+        print_answer(result)
+        return
+
+    # Default: interactive CLI
+    interactive_cli(chatbot)
+
 
 if __name__ == "__main__":
     main()
