@@ -7,3 +7,4 @@ httpx
 fastapi
 uvicorn[standard]
 pydantic
+rank-bm25
