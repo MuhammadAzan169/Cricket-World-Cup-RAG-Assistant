@@ -226,8 +226,8 @@ input {
 }
 
 @keyframes pulse-glow {
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 1; }
+  0%, 100% { opacity: 0.4; box-shadow: 0 0 4px currentColor; }
+  50% { opacity: 1; box-shadow: 0 0 10px currentColor; }
 }
 
 @keyframes shimmer {
@@ -576,6 +576,17 @@ input {
 .navbar-links a.active::before {
   width: 60%;
 }
+
+/* Chatbot CTA link in navbar */
+.navbar-cta-link {
+  background: linear-gradient(135deg, var(--accent), hsl(145, 60%, 25%));
+  padding: 0.35rem 0.9rem !important;
+  border-radius: 6px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.navbar-cta-link::before { display: none !important; }
+.navbar-cta-link:hover { opacity: 0.9; }
 
 /* Mobile hamburger menu */
 .navbar-toggle {
@@ -1663,6 +1674,7 @@ input {
   scrollbar-width: thin;
   scrollbar-color: hsla(42, 55%, 55%, 0.3) transparent;
   scroll-behavior: smooth;
+  position: relative;
 }
 
 /* Chat Scrollbar — refined */
@@ -1778,6 +1790,8 @@ input {
   transition: transform 0.2s ease, box-shadow 0.3s ease;
   word-wrap: break-word;
   overflow-wrap: break-word;
+  word-break: break-word;
+  min-width: 0;
 }
 
 .chat-msg-bubble:hover {
@@ -1907,6 +1921,8 @@ input {
 .suggestion-btn:nth-child(6) { animation-delay: 0.2s; }
 .suggestion-btn:nth-child(7) { animation-delay: 0.24s; }
 .suggestion-btn:nth-child(8) { animation-delay: 0.28s; }
+.suggestion-btn:nth-child(9) { animation-delay: 0.32s; }
+.suggestion-btn:nth-child(10) { animation-delay: 0.36s; }
 
 .suggestion-btn::before {
   content: '';
@@ -2185,3 +2201,111 @@ input {
     scroll-behavior: auto !important;
   }
 }
+
+/* =============================================
+   CHATBOT PAGE — Suggestion overrides
+   Chatbot page uses wrapped suggestions instead of
+   horizontal scroll, so we override from style.css
+   ============================================= */
+.chatbot-page .chat-suggestions {
+  flex-wrap: wrap;
+  overflow-x: visible;
+  mask-image: none;
+  -webkit-mask-image: none;
+  padding: 0;
+}
+
+/* Full chat container needs relative for scroll button */
+.full-chat-container {
+  position: relative;
+}
+
+/* =============================================
+   MARKDOWN RENDERED CONTENT — CSS classes
+   Used by formatMarkdown() to avoid inline styles
+   ============================================= */
+.md-code-block {
+  background: hsla(220, 15%, 12%, 0.9);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  overflow-x: auto;
+  margin: 0.75rem 0;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  border: 1px solid hsla(220, 15%, 18%, 0.5);
+}
+
+.md-inline-code {
+  background: hsla(220, 15%, 18%, 0.8);
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  font-size: 0.88em;
+}
+
+.md-table-wrap {
+  overflow-x: auto;
+  margin: 0.75rem 0;
+}
+
+.md-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.md-table th {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 2px solid hsla(42, 55%, 55%, 0.35);
+  border-right: 1px solid hsla(220, 15%, 18%, 0.4);
+  text-align: left;
+  color: var(--secondary);
+  font-weight: 600;
+  background: hsla(220, 15%, 12%, 0.6);
+}
+
+.md-table td {
+  padding: 0.4rem 0.75rem;
+  border-bottom: 1px solid hsla(220, 15%, 18%, 0.4);
+  border-right: 1px solid hsla(220, 15%, 18%, 0.3);
+  text-align: left;
+}
+
+.md-table tbody tr:hover td {
+  background: hsla(220, 15%, 15%, 0.3);
+}
+
+.md-heading {
+  color: var(--secondary);
+  margin: 0.75rem 0 0.25rem;
+  font-family: var(--font-display, sans-serif);
+}
+.md-h1 { font-size: 1.1rem; }
+.md-h2 { font-size: 1.05rem; }
+.md-h3 { font-size: 1rem; }
+.md-h4 { font-size: 0.95rem; }
+
+.md-hr {
+  border: none;
+  border-top: 1px solid hsla(220, 15%, 18%, 0.5);
+  margin: 0.75rem 0;
+}
+
+.md-list {
+  margin: 0.5rem 0;
+  padding-left: 1.4rem;
+  list-style: disc;
+}
+.md-ol {
+  list-style: decimal;
+}
+.md-list li {
+  margin: 0.25rem 0;
+  line-height: 1.6;
+}
+
+.md-para {
+  margin: 0.4rem 0;
+  line-height: 1.7;
+}
+.md-para:first-child { margin-top: 0; }
+.md-para:last-child  { margin-bottom: 0; }

@@ -943,72 +943,143 @@ function initChatRedirect() {
 function formatMarkdown(text) {
   if (!text) return '';
 
-  var html = text;
+  // Normalize line endings
+  text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
-  // Escape HTML entities
-  html = html.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
-  // Code blocks
-  html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
-  // Inline code
-  html = html.replace(/`([^`]+)`/g, '<code style="background:hsla(220,15%,18%,0.8);padding:0.15em 0.4em;border-radius:4px;font-size:0.88em;">$1</code>');
-
-  // Tables
-  html = html.replace(/((?:^\|.+\|$\n?)+)/gm, function(match) {
-    var rows = match.trim().split('\n').filter(function(r) { return r.trim(); });
-    if (rows.length < 2) return match;
-
-    var tableHtml = '<div style="overflow-x:auto;margin:0.75rem 0;"><table style="width:100%;border-collapse:collapse;font-size:0.85rem;">';
-    var isHeader = true;
-    rows.forEach(function(row) {
-      if (/^\|[\s\-:]+\|$/.test(row.trim())) {
-        isHeader = false;
-        return;
-      }
-
-      var cells = row.split('|').filter(function(c, idx, arr) { return idx > 0 && idx < arr.length - 1; });
-      var tag = isHeader ? 'th' : 'td';
-      var style = isHeader
-        ? 'style="padding:0.5rem 0.75rem;border-bottom:2px solid hsla(42,55%,55%,0.3);text-align:left;color:var(--secondary);font-weight:600;"'
-        : 'style="padding:0.4rem 0.75rem;border-bottom:1px solid hsla(220,15%,18%,0.5);text-align:left;"';
-
-      tableHtml += '<tr>';
-      cells.forEach(function(cell) {
-        tableHtml += '<' + tag + ' ' + style + '>' + cell.trim() + '</' + tag + '>';
-      });
-      tableHtml += '</tr>';
-      if (isHeader) isHeader = false;
-    });
-    tableHtml += '</table></div>';
-    return tableHtml;
+  // ── Step 1: Extract fenced code blocks (protect from further processing) ──
+  var codeBlocks = [];
+  text = text.replace(/```[\w]*\n?([\s\S]*?)```/g, function(_, code) {
+    var safe = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    codeBlocks.push('<pre class="md-code-block"><code>' + safe + '</code></pre>');
+    return '\x02CB' + (codeBlocks.length - 1) + '\x02';
   });
 
-  // Bold
-  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  // Italic
-  html = html.replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em>$1</em>');
+  // ── Step 2: HTML-escape the remaining text ──
+  text = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-  // Headings
-  html = html.replace(/^#### (.+)$/gm, '<h4 style="color:var(--secondary);margin:0.75rem 0 0.25rem;font-size:0.95rem;">$1</h4>');
-  html = html.replace(/^### (.+)$/gm, '<h3 style="color:var(--secondary);margin:0.75rem 0 0.25rem;font-size:1rem;">$1</h3>');
-  html = html.replace(/^## (.+)$/gm, '<h3 style="color:var(--secondary);margin:0.75rem 0 0.25rem;font-size:1.05rem;">$1</h3>');
-  html = html.replace(/^# (.+)$/gm, '<h2 style="color:var(--secondary);margin:0.75rem 0 0.25rem;font-size:1.1rem;">$1</h2>');
+  // ── Step 3: Inline formatter — operates on already-escaped text ──
+  function inline(t) {
+    if (!t) return '';
+    // Bold + italic
+    t = t.replace(/\*\*\*([^*\n]+)\*\*\*/g, '<strong><em>$1</em></strong>');
+    // Bold
+    t = t.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+    // Italic (not preceded/followed by another *)
+    t = t.replace(/(^|[^*])\*([^*\n]+)\*($|[^*])/g, '$1<em>$2</em>$3');
+    // Inline code
+    t = t.replace(/`([^`\n]+)`/g, '<code class="md-inline-code">$1</code>');
+    return t;
+  }
 
-  // Horizontal rules
-  html = html.replace(/^---$/gm, '<hr style="border:none;border-top:1px solid hsla(220,15%,18%,0.5);margin:0.75rem 0;">');
+  // ── Step 4: Table builder ──
+  function buildTable(rows) {
+    var valid = rows.filter(function(r) { return r.trim(); });
+    if (!valid.length) return '';
+    var html = '<div class="md-table-wrap"><table class="md-table">';
+    var headerDone = false;
+    valid.forEach(function(row) {
+      // Separator row  |---|---|  — marks end of header
+      if (/^\|[\s\-:|]+\|$/.test(row.trim())) { headerDone = true; return; }
+      var cells = row.split('|');
+      cells = cells.slice(1, cells.length - 1);
+      if (!headerDone) {
+        html += '<thead><tr>' + cells.map(function(c) {
+          return '<th>' + inline(c.trim()) + '</th>';
+        }).join('') + '</tr></thead><tbody>';
+        headerDone = true; // treat first row as header even without separator
+      } else {
+        html += '<tr>' + cells.map(function(c) {
+          return '<td>' + inline(c.trim()) + '</td>';
+        }).join('') + '</tr>';
+      }
+    });
+    html += '</tbody></table></div>';
+    return html;
+  }
 
-  // Bullet points
-  html = html.replace(/^[\u2022\-\*]\s+(.+)$/gm, '<li style="margin:0.2rem 0;padding-left:0.25rem;">$1</li>');
-  html = html.replace(/((?:<li[^>]*>.*?<\/li>\s*)+)/g, '<ul style="margin:0.5rem 0;padding-left:1.25rem;list-style:disc;">$1</ul>');
+  // ── Step 5: Line-by-line block parser ──
+  var lines = text.split('\n');
+  var out = [];
+  var i = 0;
 
-  // Numbered lists
-  html = html.replace(/^\d+\.\s+(.+)$/gm, '<li style="margin:0.2rem 0;">$1</li>');
+  function isBlockStart(l) {
+    if (!l || l.trim() === '') return true;
+    if (/^\x02CB\d+\x02$/.test(l.trim())) return true;
+    if (/^-{3,}$/.test(l.trim())) return true;
+    if (/^#{1,6}\s/.test(l)) return true;
+    if (l.trim().startsWith('|')) return true;
+    if (/^\s*[-*\u2022]\s+/.test(l)) return true;
+    if (/^\s*\d+[.):]\s+/.test(l)) return true;
+    return false;
+  }
 
-  // Line breaks
-  html = html.replace(/\n\n/g, '<br><br>');
-  html = html.replace(/\n/g, '<br>');
+  while (i < lines.length) {
+    var line = lines[i];
 
-  return html;
+    // Restored code block
+    var cbMatch = line.trim().match(/^\x02CB(\d+)\x02$/);
+    if (cbMatch) {
+      out.push(codeBlocks[parseInt(cbMatch[1])]);
+      i++; continue;
+    }
+
+    // Horizontal rule
+    if (/^-{3,}$/.test(line.trim()) || /^\*{3,}$/.test(line.trim())) {
+      out.push('<hr class="md-hr">');
+      i++; continue;
+    }
+
+    // Heading  # ## ### ####
+    var hm = line.match(/^(#{1,6})\s+(.+)$/);
+    if (hm) {
+      var lvl = Math.min(hm[1].length, 4);
+      out.push('<h' + (lvl + 1) + ' class="md-heading md-h' + lvl + '">' + inline(hm[2]) + '</h' + (lvl + 1) + '>');
+      i++; continue;
+    }
+
+    // Table — collect consecutive pipe-starting lines
+    if (line.trim().startsWith('|')) {
+      var tbl = [];
+      while (i < lines.length && lines[i].trim().startsWith('|')) { tbl.push(lines[i]); i++; }
+      out.push(buildTable(tbl));
+      continue;
+    }
+
+    // Unordered list
+    if (/^\s*[-*\u2022]\s+/.test(line)) {
+      var uli = [];
+      while (i < lines.length && /^\s*[-*\u2022]\s+/.test(lines[i])) {
+        uli.push('<li>' + inline(lines[i].replace(/^\s*[-*\u2022]\s+/, '')) + '</li>');
+        i++;
+      }
+      out.push('<ul class="md-list">' + uli.join('') + '</ul>');
+      continue;
+    }
+
+    // Ordered list
+    if (/^\s*\d+[.):,]\s+/.test(line)) {
+      var oli = [];
+      while (i < lines.length && /^\s*\d+[.):,]\s+/.test(lines[i])) {
+        oli.push('<li>' + inline(lines[i].replace(/^\s*\d+[.):,]\s+/, '')) + '</li>');
+        i++;
+      }
+      out.push('<ol class="md-list md-ol">' + oli.join('') + '</ol>');
+      continue;
+    }
+
+    // Empty line — skip
+    if (line.trim() === '') { i++; continue; }
+
+    // Paragraph — collect consecutive non-block lines
+    var para = [];
+    while (i < lines.length && !isBlockStart(lines[i])) {
+      para.push(inline(lines[i]));
+      i++;
+    }
+    if (para.length) out.push('<p class="md-para">' + para.join('<br>') + '</p>');
+  }
+
+  return out.join('');
 }
 
 /* =============================================================

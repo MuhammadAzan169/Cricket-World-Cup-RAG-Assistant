@@ -26,6 +26,7 @@ import sys
 import time
 from collections import defaultdict
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -706,7 +707,7 @@ class LLMClient:
 
         messages = [{"role": "system", "content": system_prompt}]
 
-        # Add conversation history (last 6 turns max)
+        # Add conversation history (last 3 turns max — saves context budget)
         if conversation_history:
             messages.extend(conversation_history[-6:])
 
@@ -716,13 +717,13 @@ class LLMClient:
         effective_max_tokens = self.max_tokens
         system_len = len(system_prompt)
         if system_len > 15000:
-            effective_max_tokens = max(self.max_tokens, 4000)
+            effective_max_tokens = max(self.max_tokens, 6000)
         elif system_len > 10000:
-            effective_max_tokens = max(self.max_tokens, 3000)
+            effective_max_tokens = max(self.max_tokens, 5000)
         elif system_len > 6000:
-            effective_max_tokens = max(self.max_tokens, 2500)
+            effective_max_tokens = max(self.max_tokens, 4000)
         elif system_len > 4000:
-            effective_max_tokens = max(self.max_tokens, 2000)
+            effective_max_tokens = max(self.max_tokens, 3500)
 
         try:
             client = self._get_client()
@@ -754,6 +755,74 @@ class LLMClient:
             and self._api_key not in ("your_api_key_here", "")
         )
 
+    def generate_stream(
+        self,
+        system_prompt: str,
+        user_message: str,
+        conversation_history: Optional[List[Dict[str, str]]] = None,
+    ):
+        """
+        Generate a streaming response from the LLM. Yields text chunks.
+        """
+        if not self._api_key or self._api_key in ("your_api_key_here", ""):
+            yield "⚠️ LLM API key not configured."
+            return
+
+        messages = [{"role": "system", "content": system_prompt}]
+        if conversation_history:
+            messages.extend(conversation_history[-6:])
+        messages.append({"role": "user", "content": user_message})
+
+        effective_max_tokens = self.max_tokens
+        system_len = len(system_prompt)
+        if system_len > 15000:
+            effective_max_tokens = max(self.max_tokens, 6000)
+        elif system_len > 10000:
+            effective_max_tokens = max(self.max_tokens, 5000)
+        elif system_len > 6000:
+            effective_max_tokens = max(self.max_tokens, 4000)
+
+        try:
+            client = self._get_client()
+            max_retries = 3
+            last_error = None
+            for attempt in range(max_retries):
+                try:
+                    response = client.chat.completions.create(
+                        model=self.model,
+                        messages=messages,
+                        max_tokens=effective_max_tokens,
+                        temperature=self.temperature,
+                        stream=True,
+                    )
+                    for chunk in response:
+                        if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                            yield chunk.choices[0].delta.content
+                    return  # Success — exit generator
+                except Exception as e:
+                    last_error = e
+                    error_msg = str(e)
+                    if "503" in error_msg or "502" in error_msg or "rate" in error_msg.lower():
+                        wait_time = (attempt + 1) * 1.5
+                        logger.warning(f"LLM stream attempt {attempt + 1}/{max_retries} failed (retrying in {wait_time}s): {error_msg}")
+                        import time as _time
+                        _time.sleep(wait_time)
+                    else:
+                        raise  # Non-retryable error
+            # All retries exhausted
+            error_msg = str(last_error)
+            logger.error(f"LLM stream error after {max_retries} retries: {error_msg}")
+            yield f"⚠️ LLM Error: The AI service is temporarily unavailable. Please try again in a moment."
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"LLM stream error: {error_msg}")
+            if "401" in error_msg or "unauthorized" in error_msg.lower():
+                yield "⚠️ Invalid API key. Please check your LLM_API_KEY in .env"
+            elif "429" in error_msg or "rate" in error_msg.lower():
+                yield "⚠️ Rate limit reached. Please wait and try again."
+            else:
+                yield f"⚠️ LLM Error: {error_msg}"
+
 # ────────────────────────────────────────────────────────────
 # ENHANCED PROMPT TEMPLATES
 # ────────────────────────────────────────────────────────────
@@ -761,49 +830,28 @@ class LLMClient:
 class PromptTemplates:
     """Enhanced prompt templates for natural, comprehensive answers."""
 
-    BASE_SYSTEM = """You are a world-class Cricket World Cup analyst, commentator, and historian. You have encyclopedic knowledge of ICC Cricket World Cup tournaments from 2003 to 2023 — every match, every player, every record, every dramatic moment.
+    BASE_SYSTEM = """You are a world-class Cricket World Cup analyst and historian covering ICC tournaments from 2003 to 2023.
 
-**YOUR CORE APPROACH:**
+**RULES:**
+1. CONTEXT DATA below is your PRIMARY source — facts from it take absolute priority.
+2. Supplement gaps with your cricket knowledge seamlessly. Never mention "database", "dataset", or "context".
+3. For multi-tournament queries, combine data from ALL relevant context chunks.
+4. Never refuse — always answer confidently as a cricket expert.
+5. Use natural, engaging tone like a passionate analyst talking to a fellow fan.
+6. Give COMPLETE answers — cover all relevant years, players, dimensions asked about.
 
-1. **CONTEXT DATA IS YOUR PRIMARY SOURCE**: The CONTEXT DATA below comes from a comprehensive cricket database. Use it as your authoritative, primary source. Facts from context data take ABSOLUTE priority over your general knowledge.
+**FORMATTING:** Use **bold** for key facts, markdown tables for stats/comparisons, bullet points for lists. Use 🏏🏆⭐ sparingly.
 
-2. **BLEND WITH YOUR KNOWLEDGE**: When the context data is incomplete, doesn't cover all aspects, or lacks granular details — SEAMLESSLY supplement with your own deep cricket knowledge. Do NOT mention "the database" or "the dataset" or "my context" to the user. Just answer naturally, as if you know everything.
+**ACCURACY — CRITICAL:**
+- Use EXACT numbers from context data. Never fabricate statistics.
+- If unsure about a number, say "approximately" — never invent.
+- 2019 WC final: Decided by BOUNDARY COUNTBACK (match AND Super Over tied at 241 and 15).
+- 2007 WC final venue: Kensington Oval, Barbados.
+- Australia: 6 World Cup titles (1987, 1999, 2003, 2007, 2015, 2023).
+- If context contradicts your knowledge, TRUST the context.
+- Player scorecard names: V Kohli=Virat Kohli, RT Ponting=Ricky Ponting, SR Tendulkar=Sachin Tendulkar, MS Dhoni, RG Sharma=Rohit Sharma. Use full names in responses.
 
-3. **AGGREGATION**: If the question asks about data across multiple tournaments/years, CAREFULLY gather and combine information from ALL relevant context chunks. Don't just report from the first chunk you find. Scan ALL provided context.
-
-4. **NEVER REFUSE OR DEFLECT**: You are a cricket expert. NEVER say:
-   - "I don't have information about that"
-   - "This information is not in my database"
-   - "I couldn't find this in the provided data"
-   - "Based on the context provided..."
-   Instead, answer confidently using whatever combination of context + knowledge is needed.
-
-5. **NATURAL CONVERSATIONAL TONE**: Write like a passionate, knowledgeable cricket analyst having a conversation with a fellow fan. Be warm, engaging, and authoritative. Use vivid language. Share the story behind the numbers.
-
-6. **COMPLETENESS**: Always give a COMPLETE answer. If asked about multiple tournaments, cover ALL of them. If asked for a comparison, compare ALL relevant dimensions. Don't leave gaps.
-
-7. **SMART FORMATTING**:
-   - Use **bold** for key names, numbers, and facts
-   - Use markdown tables for comparisons, rankings, and statistics
-   - Use bullet points for lists
-   - Use emojis sparingly for flair (🏏, 🏆, ⭐)
-   - Break long answers into clear sections
-
-8. **ACCURACY IS PARAMOUNT — ANTI-HALLUCINATION RULES**:
-   - When context data provides specific numbers (runs, wickets, averages, scores), use those EXACT numbers.
-   - **NEVER fabricate statistics** — if you don't know an exact number, say approximately or acknowledge uncertainty.
-   - **NEVER invent match scores, individual performances, or records** that aren't in the context or your certain knowledge.
-   - **Key facts you MUST get right**:
-     * 2019 WC final: Decided by BOUNDARY COUNTBACK after BOTH match AND Super Over were tied at 241 and 15 respectively. NOT decided by wickets.
-     * 2007 WC final venue: Kensington Oval, Barbados (NOT Lord's London).
-     * Rohit Sharma's WC centuries: His highest in a WC was 140 vs Pakistan (2019). He has NEVER scored a double century in a World Cup.
-     * Australia have won 6 World Cup titles (most ever): 1987, 1999, 2003, 2007, 2015, 2023.
-   - If context data contradicts your knowledge, TRUST the context data.
-   - If you're unsure about a specific stat, provide what you know with appropriate hedging.
-
-9. **WORLD CUP COVERAGE**: ICC Cricket World Cup tournaments: 2003 (South Africa), 2007 (West Indies), 2011 (India/Sri Lanka/Bangladesh), 2015 (Australia/New Zealand), 2019 (England), 2023 (India).
-
-10. **PLAYER NAME NOTE**: Players in the database use scorecard format (e.g., "V Kohli" = Virat Kohli, "RT Ponting" = Ricky Ponting, "SR Tendulkar" = Sachin Tendulkar, "MS Dhoni" = MS Dhoni, "RG Sharma" = Rohit Sharma). Use full names in your response."""
+**COVERAGE:** 2003 (South Africa), 2007 (West Indies), 2011 (India/SL/Bangladesh), 2015 (Australia/NZ), 2019 (England), 2023 (India)."""
 
     @staticmethod
     def get_system_prompt(query_type: str, context: str, coverage_note: str = "") -> str:
@@ -811,76 +859,22 @@ class PromptTemplates:
         
         type_instructions = {
             "statistical": """
-**STATISTICAL QUERY INSTRUCTIONS**:
-- The user wants specific numbers, records, or rankings.
-- CAREFULLY scan ALL context data to extract every relevant statistic.
-- Present data in a clean markdown table when appropriate.
-- Include exact numbers: runs, averages, strike rates, wickets, etc.
-- For "most/best/highest" queries: list ALL candidates you can find from context, then declare the answer.
-- For aggregate queries (e.g., "total across all WCs"), SUM the data from each tournament/match.
-- If asked about a calculated stat (economy rate, average, percentage), COMPUTE it from available data.
-- ⚠ ONLY present statistics that appear in the context or that you are absolutely certain about.
-- ⚠ If a number is not in the context and you are not 100% sure, say "approximately" or "based on available data" — NEVER fabricate exact numbers.
-- ⚠ Double-check any averages, strike rates, or economy rates — a wrong decimal can be very misleading.""",
+**STATISTICAL QUERY**: Present exact numbers from context in markdown tables. For "most/best/highest" queries, list ALL candidates. For aggregate queries, SUM data across tournaments. Compute calculated stats (averages, rates) from data. Never fabricate exact numbers.""",
 
             "comparative": """
-**COMPARISON QUERY INSTRUCTIONS**:
-- Create a clear side-by-side comparison table.
-- Include ALL relevant metrics for both subjects (runs, average, SR, centuries, wickets, etc.).
-- Cover ALL tournaments/years where both subjects participated.
-- Provide analytical insights — don't just list numbers, tell the story.
-- End with a clear, well-reasoned verdict about who comes out ahead and why.
-- If comparing across tournaments, show year-by-year breakdown.
-- ⚠ Only include data points that are present in the context or that you are certain about.
-- ⚠ If data is missing for one subject, acknowledge it rather than guessing. Partial comparisons are better than wrong ones.
-- ⚠ When comparing players, ensure you are comparing the same metric (e.g., World Cup stats only, not overall ODI stats unless asked).""",
+**COMPARISON QUERY**: Create side-by-side comparison table with ALL relevant metrics. Cover all tournaments where both subjects participated. Provide analytical verdict. Only include data points from context or certain knowledge.""",
 
             "match_specific": """
-**MATCH QUERY INSTRUCTIONS**:
-- Provide complete match details: teams, venue, date, toss, result, margin.
-- Include scorecard highlights: top batters with runs(balls), top bowlers with figures.
-- Mention Player of the Match and key turning points.
-- Tell the STORY of the match — what made it special, dramatic, or memorable.
-- Include specific moments like crucial wickets, big partnerships, last-over drama.
-- If asked about an obscure detail (unusual dismissal, specific over, etc.), look carefully in the Key Moments section of the context.
-- ⚠ Get the VENUE and DATE right — these are commonly confused between matches. Only state them if they appear in context.
-- ⚠ Do NOT mix up details from different matches. If the context includes multiple matches, carefully separate them.
-- ⚠ For finals and semi-finals, the exact result margin and method (e.g., "by 125 runs", "by boundary countback") must be precisely stated.""",
+**MATCH QUERY**: Include teams, venue, date, toss, result, margin. Scorecard highlights (top batters with runs/balls, top bowlers with figures). Player of the Match, key turning points. Tell the story of the match. Don't mix up details between matches.""",
 
             "tournament": """
-**TOURNAMENT QUERY INSTRUCTIONS**:
-- Include: Winner, Runner-up, Semi-finalists, Host country/countries, Format.
-- Key awards: Player of Tournament, Top Run Scorer, Top Wicket Taker.
-- Team standings with Played/Won/Lost/Win%.
-- Captain information.
-- If asked about rules/format/structure, explain the tournament structure clearly.
-- If asked about awards, provide the specific award winner(s).
-- For cross-tournament queries, present data for ALL relevant years in a table.
-- ⚠ Get the Host Country right: 2003=South Africa, 2007=West Indies, 2011=India/SL/Bangladesh, 2015=Australia/NZ, 2019=England, 2023=India.
-- ⚠ Get the Winner right: 2003=Australia, 2007=Australia, 2011=India, 2015=Australia, 2019=England, 2023=Australia.
-- ⚠ Do not confuse tournament formats — group stages, Super Six, Super Eight, round-robin, and knockout structures varied across editions.""",
+**TOURNAMENT QUERY**: Include Winner, Runner-up, Semi-finalists, Host, Format. Key awards (Player of Tournament, Top Scorer, Top Wicket-taker). For cross-tournament queries, present ALL years in a table. Hosts: 2003=SA, 2007=WI, 2011=Ind/SL/Ban, 2015=Aus/NZ, 2019=Eng, 2023=Ind. Winners: 2003=Aus, 2007=Aus, 2011=Ind, 2015=Aus, 2019=Eng, 2023=Aus.""",
 
             "player": """
-**PLAYER QUERY INSTRUCTIONS**:
-- Present COMPLETE career statistics: Matches, Innings, Runs, Average, Strike Rate, Centuries, Fifties, Highest Score.
-- Include bowling stats if the player bowled: Wickets, Average, Economy, Best figures.
-- List which World Cups they played in and their role.
-- Highlight their BEST performances — mention specific match details.
-- For cross-tournament player queries: show year-by-year breakdown table.
-- Include captaincy records if applicable.
-- Tell the player's World Cup STORY — their journey, peaks, memorable moments.
-- ⚠ Verify that the stats you cite (centuries, totals, averages) actually appear in the context. Do NOT fabricate career World Cup totals.
-- ⚠ If a player's stats from one tournament are missing, clearly state which tournaments you have data for.
-- ⚠ Common pitfall: Don't confuse a player's overall ODI record with their World Cup-specific record unless the user asks about ODIs.""",
+**PLAYER QUERY**: Present complete career stats (Matches, Innings, Runs, Average, SR, Centuries, Fifties, HS). Include bowling if applicable. Show year-by-year breakdown for cross-tournament queries. Tell the player's World Cup story. Don't confuse WC stats with overall ODI stats.""",
 
             "general": """
-**GENERAL QUERY INSTRUCTIONS**:
-- Provide a comprehensive, well-rounded answer.
-- Use context data as the foundation, supplement with your cricket knowledge.
-- Be engaging, informative, and conversational.
-- Structure your answer logically with clear sections.
-- ⚠ Even for general questions, ground your answer in the retrieved context. Do not drift into speculation.
-- ⚠ If the question is vague, provide a helpful overview and then invite the user to ask something more specific.""",
+**GENERAL QUERY**: Provide comprehensive, well-rounded answer. Ground in context data, supplement with knowledge. Be engaging and conversational.""",
         }
 
         instruction = type_instructions.get(query_type, type_instructions["general"])
@@ -894,16 +888,9 @@ class PromptTemplates:
 {instruction}
 {coverage_section}
 
---- CONTEXT DATA START ---
+--- CONTEXT DATA ---
 {context_section}
---- CONTEXT DATA END ---
-
-IMPORTANT REMINDERS:
-- Your PRIMARY source is the context data above. Only supplement with knowledge you are CERTAIN about.
-- For aggregate/cross-tournament questions, carefully combine data from ALL relevant context chunks.
-- If context data conflicts with your knowledge, TRUST THE CONTEXT DATA.
-- Never fabricate scores, dates, venues, or statistics. If unsure, say so gracefully.
-- Be a cricket expert talking to a fan — warm, passionate, authoritative, but honest."""
+--- END CONTEXT ---"""
 
 # ────────────────────────────────────────────────────────────
 # CRICKET CHATBOT
@@ -922,6 +909,8 @@ class CricketChatbot:
         self._rewriter = QueryRewriter()
         self._conversation_history: List[Dict[str, str]] = []
         self._initialized = False
+        self._response_cache: Dict[str, Dict[str, Any]] = {}
+        self._cache_ttl = 300  # 5 minutes
 
     def initialize(self) -> None:
         """Initialize all components: embeddings + LLM."""
@@ -967,6 +956,16 @@ class CricketChatbot:
                 "processing_time": 0.0,
             }
 
+        # Check cache for recent identical queries
+        cache_key = question.strip().lower()
+        if cache_key in self._response_cache:
+            cached = self._response_cache[cache_key]
+            if time.time() - cached["_cached_at"] < self._cache_ttl:
+                logger.info(f"Cache hit for: '{question[:40]}...'")
+                result = {k: v for k, v in cached.items() if not k.startswith("_")}
+                result["processing_time"] = 0.01
+                return result
+
         # Step 1: Rewrite query (handle corrections, temporal refs, ambiguity)
         rewritten_query = self._rewriter.rewrite(question, self._conversation_history)
         if rewritten_query != question:
@@ -990,7 +989,7 @@ class CricketChatbot:
         enhanced_queries = [enhance_query_with_years(sq) for sq in sub_queries]
         
         # Cap the number of sub-queries to avoid excessive search
-        max_sub_queries = 20 if is_cross else 12
+        max_sub_queries = 8 if is_cross else 6
         enhanced_queries = enhanced_queries[:max_sub_queries]
         
         logger.info(f"Searching with {len(enhanced_queries)} sub-queries")
@@ -1043,13 +1042,99 @@ class CricketChatbot:
 
         processing_time = round(time.time() - start_time, 2)
 
-        return {
+        result = {
             "answer": answer,
             "query_type": query_type,
             "sources": sources,
             "search_results": len(sources),
             "processing_time": processing_time,
         }
+
+        # Cache the response
+        self._response_cache[cache_key] = {**result, "_cached_at": time.time()}
+        # Evict old cache entries
+        if len(self._response_cache) > 50:
+            oldest = min(self._response_cache, key=lambda k: self._response_cache[k].get("_cached_at", 0))
+            del self._response_cache[oldest]
+
+        return result
+
+    def ask_stream(self, question: str):
+        """
+        Streaming version of ask(). Yields (event_type, data) tuples.
+        Events: 'meta' (query_type, sources), 'token' (text chunk), 'done' (final).
+        """
+        if not self._initialized:
+            raise RuntimeError("Chatbot not initialized. Call initialize() first.")
+
+        import json as _json
+        start_time = time.time()
+        question = question.strip()
+
+        if not question:
+            yield ("done", _json.dumps({"answer": "Please enter a question about Cricket World Cups (2003–2023).", "query_type": "empty", "sources": [], "search_results": 0, "processing_time": 0.0}))
+            return
+
+        # Rewrite, classify, search (same as ask)
+        rewritten_query = self._rewriter.rewrite(question, self._conversation_history)
+        query_type = self._classifier.classify(rewritten_query)
+        is_cross = self._classifier.is_cross_tournament(rewritten_query)
+        search_params = self._classifier.get_search_params(query_type, is_cross)
+
+        sub_queries = generate_sub_queries(rewritten_query, query_type)
+        enhanced_queries = [enhance_query_with_years(sq) for sq in sub_queries]
+        max_sub_queries = 8 if is_cross else 6
+        enhanced_queries = enhanced_queries[:max_sub_queries]
+
+        bm25_weight = search_params.get("bm25_weight", None)
+        if len(enhanced_queries) > 1:
+            context_text, sources = self._embeddings.multi_query_context(
+                queries=enhanced_queries,
+                top_k=search_params["top_k"],
+                score_threshold=search_params["score_threshold"],
+                max_total=12,
+                bm25_weight=bm25_weight,
+            )
+        else:
+            context_text, sources = self._embeddings.get_context_text(
+                query=enhanced_queries[0],
+                top_k=search_params["top_k"],
+                score_threshold=search_params["score_threshold"],
+                bm25_weight=bm25_weight,
+            )
+
+        coverage_note = validate_context_coverage(context_text, rewritten_query)
+        system_prompt = PromptTemplates.get_system_prompt(query_type, context_text, coverage_note)
+
+        # Emit metadata
+        yield ("meta", _json.dumps({
+            "query_type": query_type,
+            "sources": sources,
+            "search_results": len(sources),
+        }))
+
+        # Stream LLM tokens
+        full_answer = []
+        for token in self._llm.generate_stream(
+            system_prompt=system_prompt,
+            user_message=question,
+            conversation_history=self._conversation_history,
+        ):
+            full_answer.append(token)
+            # JSON-encode token so newlines (\n) survive SSE transport intact
+            yield ("token", _json.dumps(token))
+
+        answer = "".join(full_answer)
+
+        # Save history
+        save_chat_history(question, answer, query_type)
+        self._conversation_history.append({"role": "user", "content": question})
+        self._conversation_history.append({"role": "assistant", "content": answer})
+        if len(self._conversation_history) > 20:
+            self._conversation_history = self._conversation_history[-20:]
+
+        processing_time = round(time.time() - start_time, 2)
+        yield ("done", _json.dumps({"processing_time": processing_time}))
 
     def build_index(self, force_rebuild: bool = False) -> Dict[str, int]:
         """Build or rebuild the FAISS index from Cricket Data."""

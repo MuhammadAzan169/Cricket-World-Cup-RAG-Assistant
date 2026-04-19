@@ -62,7 +62,9 @@ SEMANTIC_WEIGHT = 0.65  # Weight of semantic (FAISS) score in hybrid search
 # RE-RANKING CONFIGURATION
 # ────────────────────────────────────────────────────────────
 RERANK_ENABLED = True
-RERANK_TOP_N = 15  # Number of candidates to re-rank from initial retrieval
+RERANK_TOP_N = 20  # Number of candidates to re-rank from initial retrieval
+CROSS_ENCODER_RERANK = True  # Use cross-encoder for precise re-ranking
+CROSS_ENCODER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 RERANK_METADATA_BOOST = {
     "year_match": 0.15,        # Chunk mentions the same year as query
     "team_match": 0.10,        # Chunk mentions the same team
@@ -142,18 +144,18 @@ CHUNK_TYPES = {
 # ────────────────────────────────────────────────────────────
 # SEARCH CONFIGURATION
 # ────────────────────────────────────────────────────────────
-SEARCH_TOP_K_DEFAULT = 25  # Increased for better recall
-SEARCH_TOP_K_MAX = 80
-SEARCH_SCORE_THRESHOLD = 0.03  # Lowered to catch more potentially relevant chunks
+SEARCH_TOP_K_DEFAULT = 15  # Balanced: enough recall, less noise
+SEARCH_TOP_K_MAX = 40
+SEARCH_SCORE_THRESHOLD = 0.15  # Higher threshold = higher quality chunks only
 
 # Query type-specific search parameters
 QUERY_SEARCH_PARAMS = {
-    "statistical": {"top_k": 30, "score_threshold": 0.03, "bm25_weight": 0.40},
-    "comparative": {"top_k": 30, "score_threshold": 0.03, "bm25_weight": 0.35},
-    "match_specific": {"top_k": 20, "score_threshold": 0.04, "bm25_weight": 0.40},
-    "tournament": {"top_k": 25, "score_threshold": 0.03, "bm25_weight": 0.30},
-    "player": {"top_k": 30, "score_threshold": 0.03, "bm25_weight": 0.35},
-    "general": {"top_k": 25, "score_threshold": 0.04, "bm25_weight": 0.30},
+    "statistical": {"top_k": 18, "score_threshold": 0.12, "bm25_weight": 0.40},
+    "comparative": {"top_k": 18, "score_threshold": 0.12, "bm25_weight": 0.35},
+    "match_specific": {"top_k": 12, "score_threshold": 0.15, "bm25_weight": 0.40},
+    "tournament": {"top_k": 15, "score_threshold": 0.12, "bm25_weight": 0.30},
+    "player": {"top_k": 18, "score_threshold": 0.12, "bm25_weight": 0.35},
+    "general": {"top_k": 12, "score_threshold": 0.15, "bm25_weight": 0.30},
 }
 
 # Ranking weights (for re-ranking stage)
@@ -165,8 +167,8 @@ RANKING_METADATA_WEIGHT = 0.10
 RECENCY_HALF_LIFE_DAYS = 365
 
 # Context assembly
-MAX_CONTEXT_CHARS = 14000  # Max characters to send to LLM
-MAX_CONTEXT_CHUNKS = 30  # Max chunks to include
+MAX_CONTEXT_CHARS = 8000  # Reduced: less but higher-quality context = better LLM answers
+MAX_CONTEXT_CHUNKS = 12  # Fewer chunks, each more relevant
 
 # ────────────────────────────────────────────────────────────
 # SOURCE TYPES

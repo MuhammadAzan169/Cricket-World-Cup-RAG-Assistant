@@ -37,6 +37,8 @@ from config import (
     RERANK_ENABLED,
     RERANK_TOP_N,
     RERANK_METADATA_BOOST,
+    CROSS_ENCODER_RERANK,
+    CROSS_ENCODER_MODEL,
     MAX_CONTEXT_CHARS,
     MAX_CONTEXT_CHUNKS,
     LOG_LEVEL,
@@ -70,6 +72,7 @@ class EmbeddingsManager:
         self._store: Optional[FAISSVectorStore] = None
         self._pipeline: Optional[IngestionPipeline] = None
         self._chunker: Optional[TextChunker] = None
+        self._cross_encoder = None
         self._initialized = False
 
     # ────────────────────────────────────────────────────────
@@ -99,7 +102,21 @@ class EmbeddingsManager:
             chunker=self._chunker,
         )
 
+        # Load cross-encoder for precise re-ranking
+        if CROSS_ENCODER_RERANK:
+            try:
+                from sentence_transformers import CrossEncoder
+                self._cross_encoder = CrossEncoder(CROSS_ENCODER_MODEL)
+                logger.info(f"Cross-encoder loaded: {CROSS_ENCODER_MODEL}")
+            except Exception as e:
+                logger.warning(f"Cross-encoder unavailable, falling back to metadata rerank: {e}")
+                self._cross_encoder = None
+
         self._initialized = True
+
+        # Populate BM25 from existing chunks if BM25 is empty but chunks exist
+        self._ensure_bm25_populated()
+
         stats = self.get_stats()
         logger.info(
             f"EmbeddingsManager ready — "
@@ -113,6 +130,28 @@ class EmbeddingsManager:
             raise RuntimeError(
                 "EmbeddingsManager not initialized. Call initialize() first."
             )
+
+    def _ensure_bm25_populated(self) -> None:
+        """Populate BM25 index from existing chunks if it's empty."""
+        if (
+            self._store
+            and self._store._bm25
+            and self._store._bm25.doc_count == 0
+            and self._pipeline
+            and self._pipeline.total_chunks > 0
+        ):
+            logger.info(
+                f"BM25 index is empty — populating from {self._pipeline.total_chunks} existing chunks..."
+            )
+            all_chunks = self._pipeline.get_all_chunks()
+            count = 0
+            for chunk_id, chunk in all_chunks.items():
+                self._store.add_text_to_bm25(chunk_id, chunk.text)
+                count += 1
+            # Persist the rebuilt BM25 index
+            if count > 0:
+                self._store._bm25.save(self._store._bm25_path)
+                logger.info(f"BM25 index populated and saved: {count} documents")
 
     # ────────────────────────────────────────────────────────
     # HYBRID SEARCH (FAISS + BM25)
@@ -200,15 +239,25 @@ class EmbeddingsManager:
         top_n: int = RERANK_TOP_N,
     ) -> List[Dict[str, Any]]:
         """
-        Re-rank results using metadata matching for better relevance.
-
-        Boosts scores based on:
-        - Year match (query mentions same year as chunk)
-        - Team match (query mentions same team as chunk)
-        - Player match (query mentions same player as chunk)
-        - Chunk type match (chunk type aligns with query type)
-        - Memorable moments files get a boost
+        Re-rank results using cross-encoder (if available) + metadata matching.
         """
+        # Phase 1: Cross-encoder re-ranking (semantic precision)
+        if self._cross_encoder and len(results) > 1:
+            try:
+                pairs = [(query, r["text"][:512]) for r in results[:top_n]]
+                ce_scores = self._cross_encoder.predict(pairs)
+                # Normalize cross-encoder scores to [0, 1]
+                ce_min, ce_max = float(min(ce_scores)), float(max(ce_scores))
+                ce_range = ce_max - ce_min if ce_max > ce_min else 1.0
+                for i, r in enumerate(results[:top_n]):
+                    ce_norm = (float(ce_scores[i]) - ce_min) / ce_range
+                    # Blend: 60% cross-encoder, 40% original hybrid score
+                    r["score"] = round(0.6 * ce_norm + 0.4 * r["score"], 4)
+                logger.info(f"Cross-encoder re-ranked {len(pairs)} candidates")
+            except Exception as e:
+                logger.warning(f"Cross-encoder re-rank failed, using metadata only: {e}")
+
+        # Phase 2: Metadata boosting
         query_lower = query.lower()
 
         # Extract years from query

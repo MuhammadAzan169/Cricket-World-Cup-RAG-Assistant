@@ -1,7 +1,6 @@
 /* =============================================
    Cricket AI Chatbot — Full Page Interface
-   Connected to FastAPI Backend
-   FIXED: Race conditions, duplicate handlers, robust initialization
+   With SSE Streaming, Markdown Rendering, Cricket UX
    ============================================= */
 
 // Use global API_BASE if already defined (from script.js), else detect
@@ -12,13 +11,8 @@ if (typeof API_BASE === 'undefined') {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-  // Initialize Lucide icons
   if (typeof lucide !== 'undefined') lucide.createIcons();
-
-  // Initialize chatbot
   initChatbot();
-
-  // Focus on input
   setTimeout(function() {
     var inp = document.getElementById('chatbot-input');
     if (inp) inp.focus();
@@ -31,25 +25,32 @@ function initChatbot() {
   var input = document.getElementById('chatbot-input');
   var sendBtn = document.getElementById('send-btn');
   var suggestionsContainer = document.getElementById('chat-suggestions');
+  var statusLabel = document.getElementById('chatbot-status-label');
+  var scrollBottomBtn = document.getElementById('scroll-bottom-btn');
 
   if (!messagesContainer || !form || !input || !sendBtn) return;
 
   var isProcessing = false;
+  var messageCount = 0;
+  var streamMetaCounter = 0;
+  var userIsScrolledUp = false;
 
-  // Quick action suggestions
+  // Categorized quick actions with icons
   var quickActionsData = [
-    'Who won the 2011 World Cup?',
-    'Compare Kohli and Ponting',
-    'Tell me about the 2019 final',
-    "Dhoni's World Cup career",
-    'Top run scorers across all WCs',
-    'Best bowling figures',
-    '2023 World Cup summary',
-    'Most sixes in World Cups'
+    { icon: '\u{1F3C6}', text: 'Who won the 2011 World Cup?' },
+    { icon: '\u2694\uFE0F', text: 'Compare Kohli and Ponting in World Cups' },
+    { icon: '\u{1F3CF}', text: 'Tell me about the 2019 final drama' },
+    { icon: '\u{1F464}', text: "Dhoni's complete World Cup career" },
+    { icon: '\u{1F4CA}', text: 'Top 5 run scorers across all World Cups' },
+    { icon: '\u{1F3B3}', text: 'Best bowling figures in WC history' },
+    { icon: '\u{1F1EE}\u{1F1F3}', text: 'India vs Australia head-to-head in WCs' },
+    { icon: '\u2B50', text: 'Most memorable World Cup moments' },
+    { icon: '\u{1F3DF}\uFE0F', text: '2023 World Cup full summary' },
+    { icon: '\u{1F4AF}', text: 'Who scored the most centuries in WCs?' },
   ];
 
-  // Initialize quick actions
   renderQuickActions();
+  initScrollWatcher();
 
   // Close button for welcome message
   var welcomeMsg = document.getElementById('welcome-message');
@@ -60,7 +61,7 @@ function initChatbot() {
     });
   }
 
-  // Set up form submission (single handler, no duplicates)
+  // Form submission
   form.addEventListener('submit', function(e) {
     e.preventDefault();
     if (input.value.trim() && !isProcessing) {
@@ -75,8 +76,26 @@ function initChatbot() {
     sendBtn.style.opacity = (hasText && !isProcessing) ? '1' : '0.5';
   });
 
-  // Enter key to send (no duplicate — form submit handles it)
-  // Removed redundant keydown listener since form already catches Enter
+  // ─── Scroll to bottom watcher ───
+  function initScrollWatcher() {
+    if (!messagesContainer || !scrollBottomBtn) return;
+
+    messagesContainer.addEventListener('scroll', function() {
+      var distFromBottom = messagesContainer.scrollHeight - messagesContainer.scrollTop - messagesContainer.clientHeight;
+      userIsScrolledUp = distFromBottom > 120;
+      scrollBottomBtn.classList.toggle('visible', userIsScrolledUp);
+    });
+
+    scrollBottomBtn.addEventListener('click', function() {
+      scrollToBottom(true);
+    });
+  }
+
+  function scrollToBottom(force) {
+    if (force || !userIsScrolledUp) {
+      messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+  }
 
   function renderQuickActions() {
     if (!suggestionsContainer) return;
@@ -84,12 +103,17 @@ function initChatbot() {
     quickActionsData.forEach(function(action) {
       var btn = document.createElement('button');
       btn.className = 'suggestion-btn';
-      btn.textContent = action;
+      btn.setAttribute('role', 'listitem');
+      btn.innerHTML = '<span class="suggestion-icon">' + action.icon + '</span> ' + escapeHtml(action.text);
       btn.addEventListener('click', function() {
-        if (!isProcessing) sendMessage(action);
+        if (!isProcessing) sendMessage(action.text);
       });
       suggestionsContainer.appendChild(btn);
     });
+  }
+
+  function setStatus(text) {
+    if (statusLabel) statusLabel.textContent = text;
   }
 
   function sendMessage(text) {
@@ -98,38 +122,159 @@ function initChatbot() {
     isProcessing = true;
     sendBtn.disabled = true;
     sendBtn.style.opacity = '0.5';
+    messageCount++;
 
-    // Minimize welcome message on first user message
+    // Minimize welcome on first message
     var welcome = document.getElementById('welcome-message');
     if (welcome && !welcome.classList.contains('minimized')) {
       welcome.classList.add('minimized');
     }
 
-    // Add user message
+    // Hide suggestions after a few messages
+    var sugWrapper = document.getElementById('suggestions-wrapper');
+    if (sugWrapper && messageCount > 3) {
+      sugWrapper.style.display = 'none';
+    }
+
     addMessage('user', text.trim());
-
-    // Clear input
     input.value = '';
+    setStatus('Searching...');
 
-    // Show typing indicator
+    // Try streaming first, fallback to regular
+    sendStreamingMessage(text.trim());
+  }
+
+  function sendStreamingMessage(text) {
     var typingEl = showTypingIndicator();
+    var botMsg = null;
+    var botTextEl = null;
+    var fullText = '';
+    var metadata = {};
+    streamMetaCounter++;
+    var metaId = 'stream-meta-' + streamMetaCounter;
 
-    // Call FastAPI backend
+    fetch(API_BASE + '/chat/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: text }),
+    })
+    .then(function(response) {
+      if (!response.ok) {
+        throw new Error('Server error (' + response.status + ')');
+      }
+
+      if (typingEl && typingEl.parentNode) typingEl.remove();
+
+      var reader = response.body.getReader();
+      var decoder = new TextDecoder();
+      var buffer = '';
+
+      setStatus('Generating...');
+
+      // Create bot message shell
+      botMsg = document.createElement('div');
+      botMsg.className = 'chat-msg bot';
+      var time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+      botMsg.innerHTML =
+        '<div class="chat-msg-avatar">' +
+          '<i data-lucide="bot" style="width:14px;height:14px;color:var(--accent)"></i>' +
+        '</div>' +
+        '<div class="chat-msg-bubble">' +
+          '<div class="chat-msg-text"><span class="streaming-cursor"></span></div>' +
+          '<div class="chat-msg-meta" id="' + metaId + '"></div>' +
+          '<div class="chat-msg-time">' + time + '</div>' +
+        '</div>';
+      messagesContainer.appendChild(botMsg);
+      botTextEl = botMsg.querySelector('.chat-msg-text');
+      if (typeof lucide !== 'undefined') lucide.createIcons();
+
+      function processChunk(result) {
+        if (result.done) {
+          finishStreaming();
+          return;
+        }
+
+        buffer += decoder.decode(result.value, { stream: true });
+        var lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        var eventType = '';
+        for (var i = 0; i < lines.length; i++) {
+          var line = lines[i].trim();
+          if (line.startsWith('event: ')) {
+            eventType = line.substring(7);
+          } else if (line.startsWith('data: ')) {
+            var data = line.substring(6);
+            handleSSEEvent(eventType, data);
+            eventType = '';
+          }
+        }
+
+        reader.read().then(processChunk).catch(function() { finishStreaming(); });
+      }
+
+      reader.read().then(processChunk).catch(function() { finishStreaming(); });
+    })
+    .catch(function(error) {
+      if (typingEl && typingEl.parentNode) typingEl.remove();
+      console.error('Stream error, falling back to regular:', error);
+      sendRegularMessage(text);
+    });
+
+    function handleSSEEvent(type, data) {
+      if (type === 'meta') {
+        try { metadata = JSON.parse(data); } catch(e) {}
+        setStatus('Writing response...');
+      } else if (type === 'token') {
+        try { fullText += JSON.parse(data); } catch(e) { fullText += data; }
+        if (botTextEl) {
+          botTextEl.innerHTML = renderText(fullText) + '<span class="streaming-cursor"></span>';
+          scrollToBottom(false);
+        }
+      } else if (type === 'done') {
+        try {
+          var doneData = JSON.parse(data);
+          metadata.processing_time = doneData.processing_time;
+        } catch(e) {}
+      } else if (type === 'error') {
+        try {
+          var errData = JSON.parse(data);
+          fullText += '\n\n\u26A0\uFE0F ' + (errData.error || 'An error occurred');
+        } catch(e) {}
+      }
+    }
+
+    function finishStreaming() {
+      if (botTextEl) {
+        botTextEl.innerHTML = renderText(fullText);
+      }
+
+      var metaEl = botMsg ? document.getElementById(metaId) : null;
+      if (metaEl && metadata) {
+        metaEl.innerHTML = buildMetaHtml(metadata);
+      }
+
+      finishProcessing();
+    }
+  }
+
+  function sendRegularMessage(text) {
+    var typingEl = showTypingIndicator();
+    setStatus('Processing...');
+
     fetch(API_BASE + '/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question: text.trim() }),
+      body: JSON.stringify({ question: text }),
       signal: AbortSignal.timeout ? AbortSignal.timeout(120000) : undefined
     })
     .then(function(response) {
       if (typingEl && typingEl.parentNode) typingEl.remove();
-
       if (!response.ok) {
         return response.json().catch(function() { return {}; }).then(function(errData) {
           throw new Error(errData.detail || 'Server error (' + response.status + ')');
         });
       }
-
       return response.json();
     })
     .then(function(data) {
@@ -139,55 +284,41 @@ function initChatbot() {
     })
     .catch(function(error) {
       if (typingEl && typingEl.parentNode) typingEl.remove();
-      console.error('Chat error:', error);
-
       var errorMsg;
       if (error.name === 'TimeoutError' || error.name === 'AbortError') {
-        errorMsg = '⏱️ The request timed out. The server might be processing a complex query — please try again.';
+        errorMsg = '\u23F1\uFE0F Request timed out. The server might be processing a complex query \u2014 please try again.';
       } else if (error.message && (error.message.indexOf('Failed to fetch') !== -1 || error.message.indexOf('NetworkError') !== -1)) {
-        errorMsg = '🔌 Cannot connect to the server. Make sure the backend is running:\n\npython server.py\n\n(Server should be at http://localhost:8000)';
+        errorMsg = '\u{1F50C} Cannot connect to the server. Make sure the backend is running:\n\npython server.py';
       } else {
-        errorMsg = '⚠️ ' + (error.message || 'An unexpected error occurred');
+        errorMsg = '\u26A0\uFE0F ' + (error.message || 'An unexpected error occurred');
       }
-      addMessage('bot', errorMsg);
+      addMessage('bot', errorMsg, null, true);
     })
     .finally(function() {
-      isProcessing = false;
-      sendBtn.disabled = false;
-      sendBtn.style.opacity = '1';
-      input.focus();
-
-      // Scroll to bottom
-      setTimeout(function() {
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
-      }, 100);
+      finishProcessing();
     });
   }
 
-  function addMessage(sender, text, metadata) {
+  function finishProcessing() {
+    setStatus('Ready');
+    isProcessing = false;
+    sendBtn.disabled = false;
+    sendBtn.style.opacity = '1';
+    input.focus();
+    scrollToBottom(true);
+  }
+
+  function addMessage(sender, text, metadata, isError) {
     var msg = document.createElement('div');
     msg.className = 'chat-msg ' + sender;
 
-    // Timestamp
-    var time = new Date().toLocaleTimeString([], {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true
-    });
+    var time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+    var formattedText = (sender === 'bot') ? renderText(text) : escapeHtml(text);
+    var bubbleClass = 'chat-msg-bubble' + (isError ? ' error-bubble' : '');
 
-    // Format text: use shared formatMarkdown if available
-    var formattedText = (typeof formatMarkdown === 'function') ? formatMarkdown(text) : escapeAndFormat(text);
-
-    // Build metadata footer for bot messages
     var metaHtml = '';
-    if (sender === 'bot' && metadata) {
-      var parts = [];
-      if (metadata.query_type) parts.push('Type: ' + metadata.query_type);
-      if (metadata.search_results) parts.push('Sources: ' + metadata.search_results);
-      if (metadata.processing_time) parts.push(metadata.processing_time + 's');
-      if (parts.length > 0) {
-        metaHtml = '<div class="chat-msg-meta">' + parts.join(' · ') + '</div>';
-      }
+    if (sender === 'bot' && metadata && !isError) {
+      metaHtml = '<div class="chat-msg-meta">' + buildMetaHtml(metadata) + '</div>';
     }
 
     msg.innerHTML =
@@ -195,7 +326,7 @@ function initChatbot() {
         '<i data-lucide="' + (sender === 'user' ? 'user' : 'bot') + '" ' +
            'style="width:14px;height:14px;color:' + (sender === 'user' ? 'var(--secondary)' : 'var(--accent)') + '"></i>' +
       '</div>' +
-      '<div class="chat-msg-bubble">' +
+      '<div class="' + bubbleClass + '">' +
         '<div class="chat-msg-text">' + formattedText + '</div>' +
         metaHtml +
         '<div class="chat-msg-time">' + time + '</div>' +
@@ -203,22 +334,86 @@ function initChatbot() {
 
     messagesContainer.appendChild(msg);
     if (typeof lucide !== 'undefined') lucide.createIcons();
-
-    // Scroll to bottom
-    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    scrollToBottom(true);
   }
 
-  // Fallback formatter if formatMarkdown not loaded
-  function escapeAndFormat(text) {
+  // ─── Build metadata HTML ───
+  function buildMetaHtml(metadata) {
+    if (!metadata) return '';
+    var parts = [];
+    if (metadata.query_type) parts.push('<span class="query-type-badge">' + escapeHtml(String(metadata.query_type)) + '</span>');
+    if (metadata.search_results) parts.push('Sources: ' + escapeHtml(String(metadata.search_results)));
+    if (metadata.processing_time) parts.push(escapeHtml(String(metadata.processing_time)) + 's');
+    return parts.join(' \u00B7 ');
+  }
+
+  // ─── Text Renderer — delegates to formatMarkdown if available ───
+  function renderText(text) {
     if (!text) return '';
-    var html = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    if (typeof formatMarkdown === 'function') {
+      return formatMarkdown(text);
+    }
+    return renderMarkdownFallback(text);
+  }
+
+  // ─── Fallback Markdown Renderer ───
+  function renderMarkdownFallback(text) {
+    if (!text) return '';
+    var html = escapeHtml(text);
+
+    // Tables
+    html = html.replace(/^(\|.+\|)\n(\|[-:\| ]+\|)\n((?:\|.+\|\n?)*)/gm, function(match, header, sep, body) {
+      var ths = header.split('|').filter(function(c) { return c.trim(); })
+        .map(function(c) { return '<th>' + c.trim() + '</th>'; }).join('');
+      var rows = body.trim().split('\n').map(function(row) {
+        var tds = row.split('|').filter(function(c) { return c.trim(); })
+          .map(function(c) { return '<td>' + c.trim() + '</td>'; }).join('');
+        return '<tr>' + tds + '</tr>';
+      }).join('');
+      return '<table><thead><tr>' + ths + '</tr></thead><tbody>' + rows + '</tbody></table>';
+    });
+
+    // Headers
+    html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+    html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+    html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+
+    // Bold and italic
+    html = html.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+    html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+
+    // Inline code
+    html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+    // Unordered lists
+    html = html.replace(/^[*-] (.+)$/gm, '<li>$1</li>');
+    html = html.replace(/((?:<li>.+<\/li>\n?)+)/g, '<ul>$1</ul>');
+
+    // Horizontal rules
+    html = html.replace(/^---$/gm, '<hr>');
+
+    // Line breaks
     html = html.replace(/\n/g, '<br>');
+
+    // Clean up breaks after block elements
+    html = html.replace(/<\/table><br>/g, '</table>');
+    html = html.replace(/<\/ul><br>/g, '</ul>');
+    html = html.replace(/<\/h[123]><br>/g, function(m) { return m.replace('<br>', ''); });
+    html = html.replace(/<hr><br>/g, '<hr>');
+
     return html;
+  }
+
+  function escapeHtml(text) {
+    if (!text) return '';
+    return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
   function showTypingIndicator() {
     var typing = document.createElement('div');
     typing.className = 'chat-typing';
+    typing.setAttribute('aria-label', 'Bot is typing');
     typing.innerHTML =
       '<div class="chat-msg-avatar">' +
         '<i data-lucide="bot" style="width:14px;height:14px;color:var(--accent)"></i>' +
@@ -227,15 +422,14 @@ function initChatbot() {
         '<div class="typing-dots">' +
           '<span></span><span></span><span></span>' +
         '</div>' +
+        '<span class="typing-label">Searching cricket database...</span>' +
       '</div>';
 
     messagesContainer.appendChild(typing);
-    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    scrollToBottom(true);
     if (typeof lucide !== 'undefined') lucide.createIcons();
-
     return typing;
   }
 
-  // Make sendMessage globally available for initial query from URL params
   window.sendMessage = sendMessage;
 }

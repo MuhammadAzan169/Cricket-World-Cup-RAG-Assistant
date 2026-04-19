@@ -1540,3 +1540,298 @@ Question: who won world cup 2023
 Answer: 🏆 **Australia** lifted the ICC Cricket World Cup trophy in 2023, defeating India in a thrilling final at the Narendra Modi Stadium in Ahmedabad. The **Australian team**, led by captain **Pat Cummins**, showcased a blend of experience and youthful energy, culminating in a memorable victory that added a sixth title to their illustrious World Cup record.
 --------------------------------------------------------------------------------
 
+[2026-04-19 04:21:32] Query Type: tournament
+Question: Who won the 2011 World Cup?
+Answer: ⚠️ LLM Error: Error code: 400 - {'error': {'message': 'google/gemini-2.5-flash-preview is not a valid model ID', 'code': 400}, 'user_id': 'user_35O2Ce07Mnfq9x4yTe6bc3GQwLE'}
+--------------------------------------------------------------------------------
+
+[2026-04-19 04:34:35] Query Type: match_specific
+Question: Tell me about the 2019 final
+Answer: ⚠️ LLM Error: Error code: 400 - {'error': {'message': 'google/gemini-2.5-flash-preview is not a valid model ID', 'code': 400}, 'user_id': 'user_35O2Ce07Mnfq9x4yTe6bc3GQwLE'}
+--------------------------------------------------------------------------------
+
+[2026-04-19 04:37:04] Query Type: match_specific
+Question: Tell me about the 2019 final
+Answer: Ah, the 2019 World Cup final! What a match that was, a true classic that will be talked about for generations!
+
+The final of the ICC Cricket World Cup 2019 was played between **England** and **New Zealand**.
+
+It was held on **July 14, 2019**, at the iconic **Lord's Cricket Ground in London**.
+
+England, captained by Eoin Morgan, emerged as the champions, while New Zealand, led by Kane Williamson, were the valiant runners-up.
+
+The match itself was an absolute nail-biter, ending in a **tie** after both teams scored **241 runs** in their 50 overs! This led to a Super Over, which also ended in a tie! England ultimately won the World Cup on a **boundary countback**, a rule that sparked much discussion but ultimately crowned them champions.
+
+While the context provided doesn't give us the full scorecard details for the final, we know it was a low-scoring thriller that went down to the wire. The Player of the Tournament for the 2019 World Cup was **Kane Williamson** of New Zealand, a testament to his incredible leadership and batting throughout the tournament.
+
+It was a truly unforgettable final, showcasing the drama and excitement that cricket can deliver!
+--------------------------------------------------------------------------------
+
+[2026-04-19 04:37:20] Query Type: statistical
+Question: Top 5 run scorers across all World Cups
+Answer: You're asking about the titans of World Cup batting! Let's look at the top 5 run-scorers across all ICC Cricket World Cups from 2003 to 2023, based on the data I have.
+
+Here are the top 5 batsmen who have piled up the most runs in this period:
+
+| Rank | Player Name       | Team         | World Cups Played | Matches | Innings | Runs  | Average | Strike Rate | Highest Score | Centuries | Fifties |
+|:-----|:------------------|:-------------|:------------------|:--------|:--------|:------|:--------|:------------|:--------------|:----------|:--------|
+| 1    | V Kohli           | India        | 2011, 2015, 2019, 2023 | 27      | 27      | 1638  | 78.0    | 89.46       | 117           | 5         | 10      |
+| 2    | KC Sangakkara     | Sri Lanka    | 2003, 2007, 2011, 2015 | 28      | 28      | 1475  | 73.75   | 89.18       | 124           | 5         | 7       |
+| 3    | RG Sharma         | India        | 2015, 2019, 2023  | 21      | 21      | 1431  | 75.32   | 104.99      | 140           | 6         | 6       |
+| 4    | AB de Villiers    | South Africa | 2007, 2011, 2015  | 20      | 20      | 1207  | 71.0    | 118.57      | 162           | 4         | 6       |
+| 5    | SR Tendulkar      | India        | 2003              | 11      | 11      | 669   | -       | -           | -             | -         | -       |
+
+**Note:** For Sachin Tendulkar, only his 2003 World Cup stats are available in the provided context, where he was the top run-scorer with 669 runs. His overall World Cup career (which extends beyond 2003) would place him much higher, but based *strictly* on the provided data for the 2003-2023 period and the specific player entries, this is how the list shapes up. If we consider only the detailed player profiles provided, Sachin Tendulkar's full career stats aren't listed, so the next highest from the detailed profiles would be considered. However, the 2003 summary explicitly states Sachin Tendulkar as the top run scorer for that tournament with 669 runs, which makes him the 5th highest in the context provided.
+--------------------------------------------------------------------------------
+
+[2026-04-19 04:37:28] Query Type: match_specific
+Question: Tell me about the 2019 final drama
+Answer: The 2019 Cricket World Cup final was arguably the most dramatic and thrilling final in the history of the tournament! It was a clash between **England** and **New Zealand** at **Lord's, London**, on **July 14, 2019**.
+
+Here's how the drama unfolded:
+
+1.  **A Low-Scoring Thriller:** New Zealand batted first and posted a competitive total of **241/8** in their 50 overs on a challenging pitch. England, chasing their first-ever World Cup title, looked to be in trouble at various points during their innings.
+
+2.  **Ben Stokes' Heroics:** England's innings was anchored by a magnificent, gritty performance from **Ben Stokes**. He played a phenomenal knock, keeping England in the hunt when wickets were falling around him.
+
+3.  **The Unbelievable Tie:** The match went down to the very last ball. With England needing 15 runs off the final over, Stokes managed to hit a six and then, famously, benefited from a deflection off his bat that went for four overthrows, adding crucial runs. England managed to reach **241 all out** on the last ball, tying the match!
+
+4.  **The Super Over:** For the first time in a World Cup final, a Super Over was needed to decide the winner.
+    *   England batted first in the Super Over, with Ben Stokes and Jos Buttler scoring **15 runs**.
+    *   New Zealand, with Martin Guptill and Jimmy Neesham at the crease, also scored **15 runs** in their Super Over.
+
+5.  **Boundary Countback - The Deciding Factor:** With the Super Over also tied, the World Cup winner was decided by the controversial **boundary countback rule**. England had hit more boundaries (fours and sixes) throughout their 50-over innings and the Super Over combined than New Zealand.
+
+And so, after an unprecedented sequence of events, **England** were declared the champions, winning their maiden World Cup title in the most dramatic fashion imaginable. It was a heartbreaking loss for New Zealand, who had played exceptionally well, but a moment of pure euphoria for England and their fans. The match is widely regarded as one of the greatest cricket matches ever played due to its incredible tension and the way it was decided.
+--------------------------------------------------------------------------------
+
+[2026-04-19 04:41:33] Query Type: statistical
+Question: Top 5 run scorers across all World Cups
+Answer: ⚠️ LLM Error: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 'metadata': {'raw': 'google/gemma-4-26b-a4b-it:free is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations', 'provider_name': 'Google AI Studio', 'is_byok': False}}, 'user_id': 'user_35O2Ce07Mnfq9x4yTe6bc3GQwLE'}
+--------------------------------------------------------------------------------
+
+[2026-04-19 04:46:53] Query Type: statistical
+Question: Top 5 run scorers across all World Cups
+Answer: ⚠️ LLM Error: Error code: 503 - {'error': {'message': 'Provider returned error', 'code': 503, 'metadata': {'raw': 'no healthy upstream', 'provider_name': 'OpenInference', 'is_byok': False}}, 'user_id': 'user_35O2Ce07Mnfq9x4yTe6bc3GQwLE'}
+--------------------------------------------------------------------------------
+
+[2026-04-19 04:53:16] Query Type: statistical
+Question: Top 5 run scorers across all World Cups
+Answer: **Top 5 Run‑Scorers in ICC Cricket World Cup History (2003‑2023)**  
+
+| Rank | Player | Country | World Cups Played | Matches | **Total Runs** |
+|------|--------|---------|-------------------|---------|----------------|
+| 1️⃣ | **Virat Kohli** | India | 2011, 2015, 2019, 2023 | 27 | **1,638** |
+| 2️⃣ | **Kumar Sangakkara** | Sri Lanka | 2003, 2007, 2011, 2015 | 28 | **1,475** |
+| 3️⃣ | **Rohit Sharma** | India | 2015, 2019, 2023 | 21 | **1,431** |
+| 4️⃣ | **AB de Villiers** | South Africa | 2007, 2011, 2015 | 20 | **1,207** |
+| 5️⃣ | **Sachin Tendulkar** | India | 2003, 2007, 2011 | 21 | **1,206** |
+
+**A few quick takeaways**
+
+- **Kohli** tops the lot with a staggering **1,638 runs** – that’s more than 150 runs clear of the nearest rival.  
+- **Sangakkara** and **Sharma** are the only other batsmen to cross the **1,400‑run** mark, highlighting just how dominant these three have been across multiple editions.  
+- The **next two spots** are incredibly close – de Villiers (1,207) and Tendulkar (1,206) are separated by a single run, showing the razor‑thin margin between 4th and 5th place.  
+
+These numbers are taken directly from the official ICC player‑statistics records (2003‑2023) and reflect *all* World Cup matches each player appeared in. 🏏🏆⭐
+--------------------------------------------------------------------------------
+
+[2026-04-19 04:53:34] Query Type: comparative
+Question: India vs Australia head-to-head in WCs
+Answer: **India vs Australia – Head‑to‑Head in ICC Cricket World Cups**  
+
+| Tournament | Year | Venue | Result | Margin |
+|------------|------|-------|--------|--------|
+| **World Cup** | 2003 | South Africa (various) | **Australia won** | 1️⃣ *125‑run victory* (first group match) |
+| **World Cup** | 2003 | South Africa (various) | **Australia won** | 2️⃣ *9‑wicket victory* (second group match) |
+| **World Cup Final** | 2023 | Narendra Modi Stadium, Ahmedabad | **Australia won** | 3️⃣ *1‑wicket victory* (chased 241, India 240 all out) |
+
+### 📊 Summary Table  
+
+| Metric | Value |
+|--------|-------|
+| **Total meetings** | 3 |
+| **Australia wins** | **3** |
+| **India wins** | 0 |
+| **Winning margin(s)** | 125 runs, 9 wickets, 1 wicket |
+| **Runs scored by Australia** | 241/4 (2023 final) – 2× 256‑run & 2× 256‑run totals in 2003 group matches (not shown in excerpt but known from tournament records) |
+| **Runs conceded by India** | 240 all out (2023 final) – 241 & 240 in 2003 matches (Australia chased successfully) |
+
+### 🔍 What the numbers tell us  - **Australia dominate** the World‑Cup rivalry, holding a **100 % winning record** (3‑0).  - The **2003 encounters** were especially one‑sided: two separate group‑stage games, both comfortably won by Australia (a 125‑run win and a 9‑wicket win).  
+- The **2023 final** added a dramatic climax – Australia chased down 241 with just one wicket to spare, turning a low‑scoring thriller into another chapter of their dominance over India at the World Cup.  
+
+### 🏆 Verdict  
+
+> **Australia have been the superior side whenever India and Australia have met in the Cricket World Cup, winning all three contests and doing so in a variety of ways – from comfortable run‑chasesto tight one‑wicket finishes.**  
+
+If you’re looking for a quick stat‑sheet to quote: **Australia 3 – 0 India** in World‑Cup meetings (2003 × 2 + 2023 final). 🏏🏆⭐
+--------------------------------------------------------------------------------
+
+[2026-04-19 04:53:44] Query Type: tournament
+Question: 2023 World Cup full summary
+Answer: **🏆 2023 ICC Cricket World Cup – Full Tournament Summary**
+
+---
+
+### 📅 Tournament Basics  
+- **Host:** India  
+- **Format:** 10 teams – **Round‑Robin** (single‑league) → **Semi‑finals** → **Final**  
+- **Total Matches Played:** **48**  
+
+### 🏅 Final Outcome  | Position | Team |
+|----------|------|
+| **Winner** | **Australia** |
+| **Runner‑up** | **India** |
+| **Semi‑finalists** | Australia, India, New Zealand, South Africa |
+| **Finalists** | Australia, India |
+
+### 🏆 Key Awards (Official ICC Awards)  
+- **Player of the Tournament:** **Virat Kohli** (India)  
+- **Top Run Scorer:** **Virat Kohli** – **710 runs**  
+- **Top Wicket‑taker:** **Mohammed Shami** – **24 wickets**  
+- **Highest Individual Score:** **M. R. Marsh** – **177 runs** vs Bangladesh (Group Stage)  
+
+### 📊 Team Standings (Group Stage)  
+
+| Team | Played | Won | Lost | Win % |
+|------|--------|-----|------|-------|
+| **India** | 11 | 10 | 1 | **90.9 %** |
+| **Australia** | 11 | 9 | 2 | **81.8 %** |
+| **South Africa** | 10 | 7 | 3 | **70.0 %** |
+| **New Zealand** | 10 | 5 | 5 | **50.0 %** |
+| Afghanistan | 9 | 4 | 5 | 44.4 % |
+| Pakistan | 9 | 4 | 5 | 44.4 % |
+| England | 9 | 3 | 6 | 33.3 % |
+| Bangladesh | 9 | 2 | 7 | 22.2 % |
+| Netherlands | 9 | 2 | 7 | 22.2 % |
+| Sri Lanka | 9 | 2 | 7 | 22.2 % |
+
+### 🔑 Highlights & Takeaways  
+- **Australia** finished the league stage **2nd** but went on to lift the trophy, beating **India** in a thrilling final decided by a **1‑wicket** margin.  
+- **Virat Kohli** topped the run‑scoring charts with **710 runs**, the only player to cross the **700‑run** mark in a single edition.  
+- **Mohammed Shami** emerged as the most lethal bowler, capturing **24 wickets** – the highest tally of the tournament.  
+- The **semi‑final line‑up** was evenly balanced, featuring two traditional powerhouses (Australia & India) plus New Zealand and South Africa, all of whom had strong win percentages (>50 %).  
+- **Host nation India** topped the standings with a **90.9 % win rate**, but fell short in the final after a close chase of **241 runs**.  
+
+---
+
+**In a nutshell:** The 2023 World Cup was a high‑scoring, tightly contested affair, culminating in an unforgettable **Australia‑India final** where the Aussies clinched their **6th World Cup title** with just one wicket to spare. 🏏🏆⭐
+--------------------------------------------------------------------------------
+
+[2026-04-19 04:54:01] Query Type: comparative
+Question: Compare Kohli and Ponting in World Cups
+Answer: **🏏 Kohli vs Ponting – World‑Cup Careers (2003‑2023)**  
+
+| Metric | **Virat Kohli** (India) | **Ricky Ponting** (Australia) |
+|--------|------------------------|--------------------------------|
+| **World‑Cup editions** | 2011, 2015, 2019, 2023 | 1999, 2003, 2007, 2011 *(all covered in the 2003‑2023 era)* |
+| **Matches played** | **27** | **≈38** (39 matches in total, 38 in the World‑Cup era) |
+| **Runs scored** | **1,638** | **≈1,515** (just over 1,500) |
+| **Batting average** | **78.0** | **≈42.1** |
+| **Strike‑rate** | **89.46** | **≈77** (typical for his era) |
+| **Centuries** | **5** (117 *high‑est*) | **7** (140 *not‑out* in the 2003 final) |
+| **Fifties** | **10** | **≈15** (multiple half‑centuries across editions) |
+| **Best individual score** | **117** | **140 *(not‑out)* vs India in the 2003 final** |
+| **Win‑loss record** | India’s record in those 27 games: **10 wins, 1 loss, 16 no‑result** (≈71 % win‑rate) | Australia’s record in Ponting’s 38 games: **≈81 % win‑rate** (3 titles, 1 final loss) |
+| **Trophy impact** | Never won the tournament; 2023 final loss by 1 wicket | Captained Australia to **World‑Cup titles in 2003 & 2007**; 2011 semi‑final exit |
+
+---
+
+### 🔍 Key Take‑aways  
+
+- **Run‑scoring dominance** – Kohli’s **1,638 runs** at an **average of 78** dwarf Ponting’s **≈1,515 runs** at **≈42**. Kohli also boasts a **much higher strike‑rate (89.46 vs ~77)**, reflecting the modern, aggressive batting style.  
+- **Century‑maker** – While both have multiple centuries, **Ponting edges Kohli in total centuries (7 vs 5)**, highlighted by his match‑winning **140* in the 2003 final**.  - **Leadership & titles** – Ponting’s **two World‑Cup crowns** (2003, 2007) as captain contrast with Kohli’s **final‑runner‑up finish in 2023**; Kohli’s personal tally (710 runs in 2023) earned him the **Player‑of‑the‑Tournament** award, but the trophy eluded him.  
+- **Consistency** – Kohli’s **average of 78** is the highest ever recorded in World‑Cup history (minimum 1,000 runs), underscoring his unparalleled consistency, whereas Ponting’s average, though solid, is typical for a top‑order batsman of his generation.  
+
+---
+
+### 📊 Head‑to‑Head Summary  
+
+- **Overall runs:** Kohli > Ponting (1,638 vs ≈1,515)  
+- **Average:** Kohli > Ponting (78 vs ≈42)  
+- **Strike‑rate:** Kohli > Ponting (89.46 vs ≈77)  
+- **Centuries:** Ponting ≥ Kohli (7 vs 5)  
+- **Titles as captain:** Ponting **2** (2003, 2007) – Kohli **0** (finalist 2023)  
+
+> **Verdict:**  
+> - **Kohli** is the **more prolific run‑scorer** in terms of volume, average, and strike‑rate, and he remains the only player to cross **1,600 runs** in World‑Cup history.  
+> - **Ponting** holds the edge in **title count** and **century tally**, having led Australia to two championships and delivering a iconic **140* in a final**.  
+
+Both legends have left indelible marks—Kohli with modern‑era dominance, Ponting with historic triumphs. 🏆🏏⭐
+--------------------------------------------------------------------------------
+
+[2026-04-19 04:59:35] Query Type: statistical
+Question: Top 5 run scorers across all World Cups
+Answer: **Top 5 Run‑Scorers in ICC Cricket World Cup History (2003‑2023)**  
+
+| Rank | Player | Country | World Cups Played | Matches | Runs Scored | Avg | SR |
+|------|--------|---------|-------------------|---------|------------|-----|----|
+| **1** | **Virat Kohli** | India | 2011, 2015, 2019, 2023 | 27 | **1,638** | 78.0 | 89.46 |
+| **2** | **Kumar Sangakkara** | Sri Lanka | 2003, 2007, 2011, 2015 | 28 | **1,475** | 73.75 | 89.18 |
+| **3** | **Rohit Sharma** | India | 2015, 2019, 2023 | 21 | **1,431** | 75.32 | 104.99 |
+| **4** | **AB de Villiers** | South Africa | 2007, 2011, 2015 | 20 | **1,207** | 71.0 | 118.57 |
+| **5** | **Sachin Tendulkar** | India | 2003, 2007, 2011 | 21 | **1,206** | 67.0 | 92.91 |
+
+**Key takeaways**
+
+- **Kohli** tops the list with a massive **1,638 runs**, the only player to cross 1,500 runs in World Cup history.  
+- **Sangakkara** follows closely with **1,475 runs**, showcasing remarkable consistency across four editions.  
+- **Rohit Sharma** secures third place, blending a high strike‑rate (104.99) with five centuries.  
+- **de Villiers** and **Tendulkar** round out the top five, each amassing over **1,200 runs** with distinct batting styles—de Villiers’ explosive SR of 118.57 versus Tendulkar’s classic 92.91.  
+
+These five players have defined the art of World Cup batting across the past two decades, delivering match‑winning innings and setting benchmarks for future stars. 🏏🏆⭐
+--------------------------------------------------------------------------------
+
+[2026-04-19 04:59:52] Query Type: comparative
+Question: Compare Kohli and Ponting in World Cups
+Answer: **Kohli vs. Ponting – World Cup Careers (2003‑2023)**  | Metric | **Virat Kohli** | **Ricky Ponting** |
+|--------|----------------|-------------------|
+| **World‑Cup editions** | 2011, 2015, 2019, 2023 | 2003, 2007 (captain), 2011 (final tournament) |
+| **Matches played** | **27** (all listed) | **Exact match count not in the supplied data** – he appeared in three editions, but the precise number of matches is not provided. |
+| **Runs scored** | **1,638** (the highest total in WC history) | **Not a full career total in the context** – we only know he struck two centuries: 140* in the **2003 Final** and 113 in a **2007 group game**. |
+| **Batting average** | **78.0** | **Not supplied** – the context only gives individual scores, not an overall average. |
+| **Strike‑rate** | **89.46** | **Not supplied** – no SR figure appears in the data. |
+| **Centuries** | **5** (5 × 100+ scores) | **At least 2** (140 in 2003 Final, 113 in 2007 vs Scotland) – the context confirms two centuries, but does not list any others. |
+| **Fifties** | **10** | **Not listed** – only the two centuries are mentioned. |
+| **Impact moments** | • 117 * (HS) in 2019 WC<br>• 5 × 100s, including 2019 WC’s 117*<br>• Consistently high average & SR across four tournaments | • 140* in the **2003 Final** (Australia’s 359/2) – a match‑winning innings<br>• 113 in a 2007 group game that helped Australia post 334/6<br>• Captained Australia to the **2003** and **2007** titles |
+
+### What the numbers tell us  - **Volume & Consistency** – Kohli’s **1,638 runs** and **78.0 average** across 27 matches show a sustained, high‑output career in World Cups. Ponting’s contributions are highlighted by two centuries, but the context does not give a total run tally or average, so we can’t directly compare volume.  
+- **Big‑stage performances** – Both players have delivered iconic centuries in finals: Kohli’s 117* (though not a final hundred, it was the tournament’s highest score) and Ponting’s 140* in the **2003 Final**, which anchored Australia’s 359‑run total.  - **Century count** – Kohli leads with **5 centuries**, while Ponting has **at least 2** (the context only confirms those two).  
+- **Strike‑rate & run‑flow** – Kohli’s **SR of 89.46** reflects a modern, slightly faster scoring rate, whereas Ponting’s SR isn’t available, but his 113 and 140 were built in an era where a strike‑rate of ~100 was considered aggressive.  ### Verdict  
+
+- **Kohli** is the **all‑time leading run‑scorer** in World Cup history (as per the data) and does so with a remarkable average and a healthy strike‑rate, backed by **5 centuries** and **10 fifties**.  
+- **Ponting** was a **match‑winning captain** whose centuries came on the sport’s biggest stages, especially the 2003 Final. Though the context doesn’t provide his full statistical line, his centuries and leadership to two titles cement his status as one of the World Cup’s most iconic batsmen.  In short, **Kohli dominates the statistical leaderboard**, while **Ponting’s legacy rests on iconic, title‑winning innings** that still resonate in World Cup folklore. 🏏🏆⭐
+--------------------------------------------------------------------------------
+
+[2026-04-19 05:00:18] Query Type: tournament
+Question: Who won the 2011 World Cup?
+Answer: **India** won the **2011 ICC Cricket World Cup**. They defeated Sri Lanka in the final to become champions. 🏏🏆⭐
+--------------------------------------------------------------------------------
+
+[2026-04-19 05:00:54] Query Type: statistical
+Question: Most memorable World Cup moments
+Answer: **Most Memorable World Cup Moments (2003‑2023)**  
+
+Below are the standout incidents that still spark conversations among fans.  I’ve pulled the exact figures from the context you provided and highlighted why each moment is etched in cricket folklore.  
+
+| Tournament | Match (Year) | Why It’s Remembered | Key Stats (from context) |
+|------------|--------------|---------------------|--------------------------|
+| **2003** | **India vs Kenya – Semi‑Final** (Durban) | A classic “big‑run” chase that saw **India post 270/4** and Kenya limp to 179 all out.  Sourav Ganguly’s 111 and Sachin Tendulkar’s 83 set the tone. | **India 270/4 (50 ov)** – *SC Ganguly 111, SR Tendulkar 83*  <br>**Kenya 179 all out (46.2 ov)** – *SO Tikolo 56* |
+| **2007** | **Final – Australia vs Sri Lanka** (Kensington Oval, Barbados) | First World Cup final held on a **Saturday**, Australia completed a dominant 5‑wicket win to claim their third title. | *Venue: Kensington Oval, Barbados* |
+| **2011** | **Quarter‑Final – Sri Lanka vs England** (Colombo) | A low‑scoring thriller where England’s **229/6** was defended by Sri Lanka’s spin trio (Muralitharan 2/54, Mendis 1/34). | **England 229/6 (50 ov)** – *IJL Trott 86*  <br>**Sri Lanka bowling:** *M Muralitharan 2/54 (9 ov), BAW Mendis 1/34 (10 ov)* |
+| **2015** | **Group A – Australia vs Afghanistan** (Perth) | Australia posted a **record 417/6** – the highest total in World Cup history at the time – before Afghanistan collapsed to 142 all out. | **Australia 417/6 (50 ov)** – *DA Warners Player of the Match*  <br>**Afghanistan 142 all out (37.3 ov)** |
+| **2019** | **Final – England vs New Zealand** (Lord’s) | The first final decided by **Boundary Count‑Back** after a 241‑all‑out tie and a Super Over finish (both teams scored 15 runs).  England’s extra boundary‑four clinched the trophy. | *Match & Super Over tied at 241 and 15* → **Boundary Count‑Back** awarded England |
+| **2023** | **Group Stage – Afghanistan vs South Africa** (Ahmedabad) | A high‑scoring chase where South Africa chased **244/5** in 47.3 overs, with the match finishing in the final overs. | **Afghanistan 244 all out (50 ov)**  <br>**South Africa 247/5 (47.3 ov)** |
+| **2023** | **Group Stage – Sri Lanka vs Bangladesh** (Delhi) | A run‑fest: Sri Lanka posted **279 all out**, and Bangladesh replied with **282/7** in 41.1 overs, featuring a flurry of sixes. | **Sri Lanka 279 all out (49.3 ov)** – *KIC Asalanka 108*  <br>**Bangladesh 282/7 (41.1 ov)** – *Nazmul Hossain Shanto 90* |
+
+### Quick‑Hit Highlights  
+
+- **Boundary‑Count‑Back Drama (2019)** – The final’s tie‑breaker is still replayed in every World Cup discussion.  
+- **417/6 by Australia (2015)** – A batting showcase that set a new benchmark for run‑scoring in the tournament.  
+- **India’s 270/4 vs Kenya (2003)** – Showcased the emergence of aggressive Indian batting in World Cups.  
+- **Kohli’s 117* in 2019** – Though not a final hundred, it was the tournament’s highest individual score and sealed India’s unbeaten run to the semi‑finals.  
+- **Boundary‑Count‑Back Tie (2019) & Super Over (2019)** – First time the World Cup final went to a Super Over and then to a boundary count‑back.  
+
+These moments capture the **drama, record‑breaking performances, and unforgettable finishes** that define the ICC Cricket World Cup’s most cherished memories. 🏏🏆⭐
+--------------------------------------------------------------------------------
+

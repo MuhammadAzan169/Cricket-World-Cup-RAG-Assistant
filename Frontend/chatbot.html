@@ -203,6 +203,88 @@
       animation: pulse-glow 2s ease-in-out infinite;
     }
 
+    /* Streaming response cursor */
+    .streaming-cursor {
+      display: inline-block;
+      width: 2px;
+      height: 1em;
+      background: var(--secondary);
+      margin-left: 2px;
+      animation: cursor-blink 0.8s step-end infinite;
+      vertical-align: text-bottom;
+    }
+
+    /* Chat message markdown rendering */
+    .chat-msg-text table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 0.75rem 0;
+      font-size: 0.85rem;
+    }
+
+    .chat-msg-text th,
+    .chat-msg-text td {
+      padding: 0.5rem 0.75rem;
+      border: 1px solid hsla(220, 15%, 18%, 0.5);
+      text-align: left;
+    }
+
+    .chat-msg-text th {
+      background: hsla(220, 15%, 15%, 0.5);
+      font-weight: 600;
+      color: var(--secondary);
+    }
+
+    .chat-msg-text tr:hover td {
+      background: hsla(220, 15%, 15%, 0.2);
+    }
+
+    .chat-msg-text code {
+      background: hsla(220, 15%, 15%, 0.5);
+      padding: 0.15rem 0.4rem;
+      border-radius: 0.25rem;
+      font-size: 0.85em;
+    }
+
+    .chat-msg-text h1, .chat-msg-text h2, .chat-msg-text h3 {
+      margin-top: 0.75rem;
+      margin-bottom: 0.5rem;
+      font-family: var(--font-display);
+    }
+
+    .chat-msg-text ul, .chat-msg-text ol {
+      padding-left: 1.25rem;
+      margin: 0.5rem 0;
+    }
+
+    .chat-msg-text li {
+      margin-bottom: 0.25rem;
+    }
+
+    /* Query type badge */
+    .chat-msg-meta {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      margin-top: 0.5rem;
+      font-size: 0.72rem;
+      color: var(--muted-foreground);
+    }
+
+    .query-type-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      padding: 0.15rem 0.5rem;
+      border-radius: 1rem;
+      background: hsla(145, 50%, 22%, 0.15);
+      border: 1px solid hsla(145, 60%, 30%, 0.25);
+      color: hsl(145, 60%, 45%);
+      font-weight: 600;
+      text-transform: capitalize;
+    }
+
     /* Chat Messages Area */
     .chat-messages-area {
       flex: 1;
@@ -214,6 +296,47 @@
       min-height: 0;
       scrollbar-width: thin;
       scrollbar-color: hsla(42, 55%, 55%, 0.3) transparent;
+      scroll-behavior: smooth;
+      position: relative;
+    }
+
+    /* Overflow handling for bot response content */
+    .chat-msg-text {
+      overflow-wrap: break-word;
+      word-break: break-word;
+      hyphens: auto;
+      max-width: 100%;
+    }
+
+    .chat-msg-text table {
+      display: block;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      max-width: 100%;
+    }
+
+    .chat-msg-text pre {
+      overflow-x: auto;
+      max-width: 100%;
+      padding: 0.75rem 1rem;
+      background: hsla(220, 15%, 10%, 0.6);
+      border-radius: 0.5rem;
+      border: 1px solid hsla(220, 15%, 18%, 0.4);
+      font-size: 0.82rem;
+      line-height: 1.5;
+      margin: 0.5rem 0;
+    }
+
+    .chat-msg-text img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 0.5rem;
+    }
+
+    /* Error message style */
+    .chat-msg.bot .chat-msg-bubble.error-bubble {
+      border-color: hsla(0, 60%, 45%, 0.3);
+      background: linear-gradient(145deg, hsla(0, 30%, 14%, 0.95), hsla(0, 20%, 11%, 0.9));
     }
 
     /* Welcome Message */
@@ -282,6 +405,132 @@
       font-size: 0.85rem;
       color: var(--secondary);
       opacity: 0.8;
+    }
+
+    /* Welcome Stats Row */
+    .welcome-cricket-icon {
+      font-size: 3rem;
+      margin-bottom: 0.5rem;
+      filter: drop-shadow(0 4px 12px rgba(0,0,0,0.3));
+    }
+
+    .welcome-stats-row {
+      display: flex;
+      justify-content: center;
+      gap: 1.5rem;
+      margin-top: 1.25rem;
+      flex-wrap: wrap;
+    }
+
+    .welcome-stat {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 0.5rem 0.75rem;
+      background: hsla(220, 15%, 15%, 0.4);
+      border-radius: 0.75rem;
+      border: 1px solid hsla(220, 15%, 18%, 0.3);
+      min-width: 70px;
+    }
+
+    .welcome-stat-num {
+      font-family: var(--font-display);
+      font-size: 1.25rem;
+      font-weight: 800;
+      color: var(--secondary);
+    }
+
+    .welcome-stat-label {
+      font-size: 0.65rem;
+      color: var(--muted-foreground);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-top: 0.15rem;
+    }
+
+    /* Suggestions Wrapper */
+    .chat-suggestions-wrapper {
+      padding: 0.5rem 1.5rem;
+      border-top: 1px solid hsla(220, 15%, 18%, 0.2);
+      background: hsla(220, 20%, 9%, 0.5);
+      flex-shrink: 0;
+    }
+
+    .suggestions-label {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: 0.7rem;
+      color: var(--muted-foreground);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 600;
+      margin-bottom: 0.4rem;
+    }
+
+    .chat-suggestions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+    }
+
+    .suggestion-btn {
+      padding: 0.4rem 0.75rem;
+      border-radius: 1rem;
+      font-size: 0.78rem;
+      background: hsla(220, 20%, 12%, 0.7);
+      border: 1px solid hsla(220, 15%, 18%, 0.5);
+      color: var(--muted-foreground);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+
+    .suggestion-btn:hover {
+      background: hsla(42, 55%, 55%, 0.12);
+      border-color: hsla(42, 55%, 55%, 0.4);
+      color: var(--secondary);
+      transform: translateY(-1px);
+    }
+
+    .suggestion-btn .suggestion-icon {
+      margin-right: 0.25rem;
+    }
+
+    /* Scroll to bottom FAB */
+    .scroll-bottom-btn {
+      position: absolute;
+      bottom: 1rem;
+      right: 1.25rem;
+      width: 2.25rem;
+      height: 2.25rem;
+      border-radius: 50%;
+      background: hsla(220, 20%, 12%, 0.9);
+      border: 1px solid hsla(220, 15%, 22%, 0.6);
+      color: var(--secondary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      z-index: 10;
+      opacity: 0;
+      transform: translateY(8px) scale(0.9);
+      pointer-events: none;
+      transition: all 0.25s ease;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+      backdrop-filter: blur(8px);
+    }
+
+    .scroll-bottom-btn.visible {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      pointer-events: auto;
+    }
+
+    .scroll-bottom-btn:hover {
+      background: hsla(42, 55%, 55%, 0.15);
+      border-color: hsla(42, 55%, 55%, 0.4);
+      transform: translateY(-2px) scale(1.05);
     }
 
     /* Chat Input Section */
@@ -361,9 +610,67 @@
 
       .chatbot-title { font-size: 1.35rem; }
 
-      .chat-header-bar { padding: 1rem; }
-      .chat-messages-area { padding: 1rem; }
-      .chat-input-section { padding: 1rem; }
+      .chat-header-bar { padding: 0.75rem 1rem; }
+      .chat-messages-area { padding: 0.75rem; }
+      .chat-input-section { padding: 0.75rem 1rem; }
+
+      .chatbot-title { font-size: 1.25rem; }
+      .chatbot-subtitle { font-size: 0.78rem; }
+
+      .welcome-cricket-icon { font-size: 2.25rem; }
+      .welcome-title { font-size: 1.15rem; }
+      .welcome-subtitle { font-size: 0.82rem; }
+
+      .welcome-stats-row { gap: 0.75rem; }
+      .welcome-stat { padding: 0.4rem 0.5rem; min-width: 56px; }
+      .welcome-stat-num { font-size: 1rem; }
+      .welcome-stat-label { font-size: 0.6rem; }
+
+      .chat-suggestions-wrapper { padding: 0.4rem 0.75rem; }
+      .suggestion-btn { font-size: 0.72rem; padding: 0.35rem 0.65rem; }
+
+      .chat-msg-bubble { max-width: 90%; font-size: 0.82rem; }
+
+      .system-status { padding: 0.3rem 0.6rem; font-size: 0.65rem; }
+      .chatbot-avatar { width: 2.25rem; height: 2.25rem; }
+    }
+
+    @media (max-width: 480px) {
+      .chatbot-wrapper { padding: 0.4rem; }
+      .chatbot-header { padding: 0.5rem 0; margin-bottom: 0.35rem; gap: 0.75rem; }
+      .back-btn { padding: 0.5rem 0.85rem; font-size: 0.8rem; }
+      .chatbot-title { font-size: 1.1rem; }
+      .chatbot-header-text h3 { font-size: 1rem; }
+
+      .welcome-message { padding: 1.25rem 1rem; }
+      .welcome-stats-row { gap: 0.5rem; }
+
+      .chat-msg-bubble { max-width: 92%; padding: 0.6rem 0.9rem; }
+      .chatbot-input { padding: 0.75rem 1rem; font-size: 0.9rem; }
+      .send-btn { width: 2.75rem; height: 2.75rem; }
+    }
+
+    @keyframes cursor-blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0; }
+    }
+
+    /* pulse-glow keyframes defined in style.css */
+
+    .typing-label {
+      font-size: 0.78rem;
+      color: var(--muted-foreground);
+      margin-left: 0.5rem;
+      font-style: italic;
+    }
+
+    .input-hint {
+      text-align: right;
+      font-size: 0.68rem;
+      color: var(--muted-foreground);
+      opacity: 0.5;
+      margin-top: 0.35rem;
+      padding-right: 0.25rem;
     }
   </style>
 </head>
@@ -404,6 +711,10 @@
             <span class="text-gradient-green">Cric</span> <span class="text-gradient-gold">AI</span>
             <span style="color: var(--accent); font-weight: 400; font-size: 0.8rem; margin-left: 0.25rem;">— Your Cricket Companion</span>
           </h3>
+          <div class="chatbot-status">
+            <span class="status-dot"></span>
+            <span id="chatbot-status-label">Ready</span>
+          </div>
         </div>
         <div class="system-status loading" id="system-status">
           <span class="status-indicator"></span>
@@ -412,36 +723,56 @@
       </div>
 
       <!-- Messages -->
-      <div class="chat-messages-area" id="chat-messages">
+      <div class="chat-messages-area" id="chat-messages" role="log" aria-live="polite" aria-label="Chat messages">
         <div class="welcome-message" id="welcome-message">
           <button class="welcome-close-btn" id="welcome-close-btn" title="Dismiss">
             <i data-lucide="x" style="width:12px;height:12px;"></i>
           </button>
-          <h3 class="welcome-title">🏏 Welcome to Cricket AI!</h3>
+          <div class="welcome-cricket-icon">🏏</div>
+          <h3 class="welcome-title">Welcome to Cricket AI!</h3>
           <p class="welcome-subtitle">
-            I'm your expert on ICC Cricket World Cups from 2003 to 2023.
-            Ask me about tournaments, players, records, or any memorable moments.
+            Your expert on ICC Cricket World Cups from <strong>2003</strong> to <strong>2023</strong>.
+            Ask me about tournaments, players, records, head-to-head stats, or any memorable moments.
           </p>
+          <div class="welcome-stats-row">
+            <div class="welcome-stat"><span class="welcome-stat-num">6</span><span class="welcome-stat-label">World Cups</span></div>
+            <div class="welcome-stat"><span class="welcome-stat-num">293+</span><span class="welcome-stat-label">Matches</span></div>
+            <div class="welcome-stat"><span class="welcome-stat-num">14</span><span class="welcome-stat-label">Teams</span></div>
+            <div class="welcome-stat"><span class="welcome-stat-num">87</span><span class="welcome-stat-label">Centuries</span></div>
+          </div>
           <div class="welcome-hint">
             <i data-lucide="sparkles" style="width: 14px; height: 14px; vertical-align: middle;"></i>
-            Try: "Who won the 2011 World Cup?" or "Tell me about Virat Kohli's records"
+            Try one of the suggestions below to get started!
           </div>
         </div>
       </div>
 
-      <!-- Suggested Questions -->
-      <div class="chat-suggestions" id="chat-suggestions"></div>
+      <!-- Suggested Questions — categorized -->
+      <div class="chat-suggestions-wrapper" id="suggestions-wrapper">
+        <div class="suggestions-label" id="suggestions-label">
+          <i data-lucide="zap" style="width:12px;height:12px;"></i>
+          Quick Questions
+        </div>
+        <div class="chat-suggestions" id="chat-suggestions" role="list" aria-label="Suggested questions"></div>
+      </div>
+
+      <!-- Scroll to bottom -->
+      <button class="scroll-bottom-btn" id="scroll-bottom-btn" aria-label="Scroll to bottom" title="Scroll to latest message">
+        <i data-lucide="chevron-down" style="width:16px;height:16px;"></i>
+      </button>
 
       <!-- Input -->
       <div class="chat-input-section">
-        <form id="chatbot-form" class="input-with-send">
+        <form id="chatbot-form" class="input-with-send" role="search" aria-label="Ask a cricket question">
           <input type="text" id="chatbot-input" class="chatbot-input"
                  placeholder="Ask anything about World Cup cricket..."
-                 autocomplete="off" autofocus />
-          <button type="submit" id="send-btn" class="send-btn">
+                 autocomplete="off" autofocus
+                 aria-label="Type your question" />
+          <button type="submit" id="send-btn" class="send-btn" aria-label="Send message">
             <i data-lucide="send" class="icon-sm"></i>
           </button>
         </form>
+        <div class="input-hint" id="input-hint">Press Enter to send</div>
       </div>
     </div>
   </div>

@@ -26,7 +26,7 @@ from typing import Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from main import CricketChatbot
@@ -40,6 +40,12 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger("server")
+
+# Suppress noisy HTTP logs from model loading
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
+logging.getLogger("huggingface_hub.utils._http").setLevel(logging.WARNING)
+logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
 
 # ────────────────────────────────────────────────────────────
 # CHATBOT SINGLETON
@@ -210,6 +216,34 @@ async def clear_history():
 async def health():
     """Simple health check endpoint."""
     return {"status": "healthy", "timestamp": time.time()}
+
+
+@app.post("/chat/stream")
+async def chat_stream(request: ChatRequest):
+    """
+    Stream a chat response via Server-Sent Events (SSE).
+    Events: meta (query info), token (text chunk), done (final stats).
+    """
+    import asyncio
+
+    def generate():
+        try:
+            for event_type, data in chatbot.ask_stream(request.question):
+                yield f"event: {event_type}\ndata: {data}\n\n"
+        except Exception as e:
+            import json
+            logger.error(f"Stream error: {e}", exc_info=True)
+            yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 # ────────────────────────────────────────────────────────────
