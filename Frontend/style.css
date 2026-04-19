@@ -2274,6 +2274,51 @@ input {
   background: hsla(220, 15%, 15%, 0.3);
 }
 
+.md-table tbody tr:nth-child(even) td {
+  background: hsla(220, 15%, 11%, 0.35);
+}
+
+.md-table tbody tr:nth-child(even):hover td {
+  background: hsla(220, 15%, 16%, 0.4);
+}
+
+/* Copy button on bot messages */
+.copy-btn {
+  display: none;
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  padding: 0.3rem 0.45rem;
+  border-radius: 0.4rem;
+  background: hsla(220, 20%, 14%, 0.85);
+  border: 1px solid hsla(220, 15%, 22%, 0.5);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  font-size: 0.75rem;
+  line-height: 1;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(4px);
+  z-index: 5;
+}
+
+.chat-msg.bot .chat-msg-bubble:hover .copy-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.copy-btn:hover {
+  background: hsla(42, 55%, 55%, 0.15);
+  border-color: hsla(42, 55%, 55%, 0.4);
+  color: var(--secondary);
+}
+
+.copy-btn.copy-success {
+  color: var(--accent);
+  border-color: hsla(145, 50%, 45%, 0.5);
+  background: hsla(145, 50%, 12%, 0.5);
+}
+
 .md-heading {
   color: var(--secondary);
   margin: 0.75rem 0 0.25rem;

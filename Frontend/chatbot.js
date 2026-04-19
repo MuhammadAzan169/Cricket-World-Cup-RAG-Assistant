@@ -27,6 +27,7 @@ function initChatbot() {
   var suggestionsContainer = document.getElementById('chat-suggestions');
   var statusLabel = document.getElementById('chatbot-status-label');
   var scrollBottomBtn = document.getElementById('scroll-bottom-btn');
+  var inputHint = document.getElementById('input-hint');
 
   if (!messagesContainer || !form || !input || !sendBtn) return;
 
@@ -34,6 +35,7 @@ function initChatbot() {
   var messageCount = 0;
   var streamMetaCounter = 0;
   var userIsScrolledUp = false;
+  var streamRenderScheduled = false;
 
   // Categorized quick actions with icons
   var quickActionsData = [
@@ -69,11 +71,22 @@ function initChatbot() {
     }
   });
 
-  // Input validation
+  // Input validation + char counter
   input.addEventListener('input', function() {
     var hasText = input.value.trim().length > 0;
     sendBtn.disabled = !hasText || isProcessing;
     sendBtn.style.opacity = (hasText && !isProcessing) ? '1' : '0.5';
+    // Char counter hint
+    if (inputHint) {
+      var len = input.value.length;
+      if (len > 80) {
+        inputHint.textContent = len + ' characters';
+        inputHint.style.opacity = len > 300 ? '0.9' : '0.55';
+      } else {
+        inputHint.textContent = 'Press Enter to send';
+        inputHint.style.opacity = '0.5';
+      }
+    }
   });
 
   // ─── Scroll to bottom watcher ───
@@ -227,9 +240,15 @@ function initChatbot() {
         setStatus('Writing response...');
       } else if (type === 'token') {
         try { fullText += JSON.parse(data); } catch(e) { fullText += data; }
-        if (botTextEl) {
-          botTextEl.innerHTML = renderText(fullText) + '<span class="streaming-cursor"></span>';
-          scrollToBottom(false);
+        if (botTextEl && !streamRenderScheduled) {
+          streamRenderScheduled = true;
+          setTimeout(function() {
+            streamRenderScheduled = false;
+            if (botTextEl) {
+              botTextEl.innerHTML = renderText(fullText) + '<span class="streaming-cursor"></span>';
+              scrollToBottom(false);
+            }
+          }, 80);
         }
       } else if (type === 'done') {
         try {
@@ -245,6 +264,7 @@ function initChatbot() {
     }
 
     function finishStreaming() {
+      streamRenderScheduled = false;
       if (botTextEl) {
         botTextEl.innerHTML = renderText(fullText);
       }
@@ -252,6 +272,11 @@ function initChatbot() {
       var metaEl = botMsg ? document.getElementById(metaId) : null;
       if (metaEl && metadata) {
         metaEl.innerHTML = buildMetaHtml(metadata);
+      }
+
+      // Add copy button to finished bot message
+      if (botMsg && fullText) {
+        addCopyButton(botMsg, fullText);
       }
 
       finishProcessing();
@@ -335,6 +360,45 @@ function initChatbot() {
     messagesContainer.appendChild(msg);
     if (typeof lucide !== 'undefined') lucide.createIcons();
     scrollToBottom(true);
+
+    // Add copy button for non-error bot messages
+    if (sender === 'bot' && !isError && text) {
+      addCopyButton(msg, text);
+    }
+  }
+
+  // ─── Copy button for bot messages ───
+  function addCopyButton(msgEl, plainText) {
+    var bubble = msgEl.querySelector('.chat-msg-bubble');
+    if (!bubble || bubble.querySelector('.copy-btn')) return;
+    var btn = document.createElement('button');
+    btn.className = 'copy-btn';
+    btn.title = 'Copy response';
+    btn.setAttribute('aria-label', 'Copy response to clipboard');
+    btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+    btn.addEventListener('click', function() {
+      navigator.clipboard.writeText(plainText).then(function() {
+        btn.classList.add('copy-success');
+        btn.title = 'Copied!';
+        setTimeout(function() {
+          btn.classList.remove('copy-success');
+          btn.title = 'Copy response';
+        }, 2000);
+      }).catch(function() {
+        // Fallback for older browsers
+        var ta = document.createElement('textarea');
+        ta.value = plainText;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        btn.classList.add('copy-success');
+        setTimeout(function() { btn.classList.remove('copy-success'); }, 2000);
+      });
+    });
+    bubble.appendChild(btn);
   }
 
   // ─── Build metadata HTML ───

@@ -150,12 +150,12 @@ SEARCH_SCORE_THRESHOLD = 0.15  # Higher threshold = higher quality chunks only
 
 # Query type-specific search parameters
 QUERY_SEARCH_PARAMS = {
-    "statistical": {"top_k": 18, "score_threshold": 0.12, "bm25_weight": 0.40},
-    "comparative": {"top_k": 18, "score_threshold": 0.12, "bm25_weight": 0.35},
-    "match_specific": {"top_k": 12, "score_threshold": 0.15, "bm25_weight": 0.40},
-    "tournament": {"top_k": 15, "score_threshold": 0.12, "bm25_weight": 0.30},
-    "player": {"top_k": 18, "score_threshold": 0.12, "bm25_weight": 0.35},
-    "general": {"top_k": 12, "score_threshold": 0.15, "bm25_weight": 0.30},
+    "statistical": {"top_k": 25, "score_threshold": 0.10, "bm25_weight": 0.40},
+    "comparative": {"top_k": 22, "score_threshold": 0.10, "bm25_weight": 0.35},
+    "match_specific": {"top_k": 15, "score_threshold": 0.12, "bm25_weight": 0.40},
+    "tournament": {"top_k": 20, "score_threshold": 0.10, "bm25_weight": 0.30},
+    "player": {"top_k": 22, "score_threshold": 0.10, "bm25_weight": 0.35},
+    "general": {"top_k": 15, "score_threshold": 0.12, "bm25_weight": 0.30},
 }
 
 # Ranking weights (for re-ranking stage)
@@ -167,8 +167,8 @@ RANKING_METADATA_WEIGHT = 0.10
 RECENCY_HALF_LIFE_DAYS = 365
 
 # Context assembly
-MAX_CONTEXT_CHARS = 8000  # Reduced: less but higher-quality context = better LLM answers
-MAX_CONTEXT_CHUNKS = 12  # Fewer chunks, each more relevant
+MAX_CONTEXT_CHARS = 14000  # More context = more complete answers for cross-tournament queries
+MAX_CONTEXT_CHUNKS = 20  # Enough chunks to cover multi-year/multi-player queries
 
 # ────────────────────────────────────────────────────────────
 # SOURCE TYPES

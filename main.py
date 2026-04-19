@@ -729,15 +729,32 @@ class LLMClient:
             client = self._get_client()
             total_chars = sum(len(m.get("content", "")) for m in messages)
             logger.info(f"LLM request: {len(messages)} messages, ~{total_chars} chars, max_tokens={effective_max_tokens}")
-            response = client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                max_tokens=effective_max_tokens,
-                temperature=self.temperature,
-            )
-            answer = (response.choices[0].message.content or "").strip()
-            logger.info(f"LLM response: {len(answer)} chars")
-            return answer or "I could not generate a response. Please try rephrasing your question."
+            max_retries = 3
+            last_error = None
+            for attempt in range(max_retries):
+                try:
+                    response = client.chat.completions.create(
+                        model=self.model,
+                        messages=messages,
+                        max_tokens=effective_max_tokens,
+                        temperature=self.temperature,
+                    )
+                    answer = (response.choices[0].message.content or "").strip()
+                    logger.info(f"LLM response: {len(answer)} chars")
+                    return answer or "I could not generate a response. Please try rephrasing your question."
+                except Exception as e:
+                    last_error = e
+                    error_msg = str(e)
+                    if "503" in error_msg or "502" in error_msg or "rate" in error_msg.lower():
+                        wait_time = (attempt + 1) * 1.5
+                        logger.warning(f"LLM attempt {attempt + 1}/{max_retries} failed (retrying in {wait_time}s): {error_msg}")
+                        import time as _time
+                        _time.sleep(wait_time)
+                    else:
+                        raise
+            error_msg = str(last_error)
+            logger.error(f"LLM error after {max_retries} retries: {error_msg}")
+            return "⚠️ LLM Error: The AI service is temporarily unavailable. Please try again in a moment."
 
         except Exception as e:
             error_msg = str(e)
@@ -840,16 +857,34 @@ class PromptTemplates:
 5. Use natural, engaging tone like a passionate analyst talking to a fellow fan.
 6. Give COMPLETE answers — cover all relevant years, players, dimensions asked about.
 
-**FORMATTING:** Use **bold** for key facts, markdown tables for stats/comparisons, bullet points for lists. Use 🏏🏆⭐ sparingly.
+**FORMATTING RULES — CRITICAL:**
+- Use **bold** for key facts and player names.
+- Use markdown tables for any stats, comparisons, or structured data. Tables MUST follow this exact format (pipe on both ends, separator row uses only `-` and `|`):
+  | Column A | Column B |
+  | --- | --- |
+  | value | value |
+- Use bullet points (`- `) for lists. Use numbered lists (`1. `) for ranked/ordered data.
+- Use `###` headings for major sections of long answers.
+- Never use HTML tags in your response.
+- Use 🏏🏆⭐ sparingly.
 
-**ACCURACY — CRITICAL:**
+**ACCURACY — CRITICAL (READ CAREFULLY):**
 - Use EXACT numbers from context data. Never fabricate statistics.
 - If unsure about a number, say "approximately" — never invent.
-- 2019 WC final: Decided by BOUNDARY COUNTBACK (match AND Super Over tied at 241 and 15).
-- 2007 WC final venue: Kensington Oval, Barbados.
-- Australia: 6 World Cup titles (1987, 1999, 2003, 2007, 2015, 2023).
+- NEVER fabricate match results, Super Overs, or tie-breakers that did not happen.
+- Only state a match had a Super Over if the context data EXPLICITLY says so.
+- KEY FACTS YOU MUST NOT GET WRONG:
+  - 2019 WC final: England vs New Zealand. Match tied at 241, Super Over tied at 15. Decided by BOUNDARY COUNTBACK (England won).
+  - 2023 WC final: Australia beat India by 6 wickets at Ahmedabad. Travis Head scored 137. NO Super Over.
+  - 2011 WC final: India beat Sri Lanka by 6 wickets at Mumbai. Dhoni's iconic six.
+  - 2007 WC final venue: Kensington Oval, Barbados. Australia beat Sri Lanka by 53 runs (D/L).
+  - 2003 WC final: Australia beat India by 125 runs at Johannesburg.
+  - 2015 WC final: Australia beat New Zealand by 7 wickets at Melbourne.
+  - Australia: 6 World Cup titles (1987, 1999, 2003, 2007, 2015, 2023).
 - If context contradicts your knowledge, TRUST the context.
 - Player scorecard names: V Kohli=Virat Kohli, RT Ponting=Ricky Ponting, SR Tendulkar=Sachin Tendulkar, MS Dhoni, RG Sharma=Rohit Sharma. Use full names in responses.
+- For head-to-head queries: list EVERY match found in context data. Do not skip any.
+- For "best/most/top" queries: scan ALL context chunks before ranking. Include at least 5-10 entries.
 
 **COVERAGE:** 2003 (South Africa), 2007 (West Indies), 2011 (India/SL/Bangladesh), 2015 (Australia/NZ), 2019 (England), 2023 (India)."""
 
@@ -859,22 +894,54 @@ class PromptTemplates:
         
         type_instructions = {
             "statistical": """
-**STATISTICAL QUERY**: Present exact numbers from context in markdown tables. For "most/best/highest" queries, list ALL candidates. For aggregate queries, SUM data across tournaments. Compute calculated stats (averages, rates) from data. Never fabricate exact numbers.""",
+**STATISTICAL QUERY**:
+- Present exact numbers from context in a clean markdown table.
+- For "most/best/highest/top" queries: scan EVERY chunk in context, list ALL candidates found (aim for 8-10 rows minimum), then rank them.
+- For aggregate queries (e.g. total runs across WCs): SUM data across ALL tournaments in context.
+- Compute calculated stats (averages, strike rates) from raw data when possible.
+- Never fabricate exact numbers. If the context only has partial data, say so.
+- Always add a brief "Key Takeaways" section with 2-3 bullet points after the table.""",
 
             "comparative": """
-**COMPARISON QUERY**: Create side-by-side comparison table with ALL relevant metrics. Cover all tournaments where both subjects participated. Provide analytical verdict. Only include data points from context or certain knowledge.""",
+**COMPARISON QUERY**:
+- Create a detailed side-by-side comparison table with ALL relevant metrics (matches, runs, average, SR, 100s, 50s, HS, etc.).
+- Cover ALL tournaments where both subjects participated — check every chunk.
+- Add a year-by-year breakdown table if both appeared in multiple WCs.
+- End with an analytical verdict (2-3 sentences): who performed better overall and why.
+- Only include data points from context or certain knowledge.""",
 
             "match_specific": """
-**MATCH QUERY**: Include teams, venue, date, toss, result, margin. Scorecard highlights (top batters with runs/balls, top bowlers with figures). Player of the Match, key turning points. Tell the story of the match. Don't mix up details between matches.""",
+**MATCH QUERY**:
+- Include: teams, venue, date, toss (who won & chose), result with exact margin.
+- Scorecard summary table: top 3-4 batters (Name, Runs, Balls, 4s, 6s) and top 2-3 bowlers (Name, Overs, Runs, Wickets) for EACH innings.
+- Player of the Match, key turning points, match narrative.
+- For head-to-head queries: list EVERY match found in context as a table with columns (Tournament, Stage, Date, Venue, Result, Margin).
+- NEVER fabricate Super Overs or tie-breakers. Only mention them if context EXPLICITLY states one occurred.
+- Don't mix up details between different matches.""",
 
             "tournament": """
-**TOURNAMENT QUERY**: Include Winner, Runner-up, Semi-finalists, Host, Format. Key awards (Player of Tournament, Top Scorer, Top Wicket-taker). For cross-tournament queries, present ALL years in a table. Hosts: 2003=SA, 2007=WI, 2011=Ind/SL/Ban, 2015=Aus/NZ, 2019=Eng, 2023=Ind. Winners: 2003=Aus, 2007=Aus, 2011=Ind, 2015=Aus, 2019=Eng, 2023=Aus.""",
+**TOURNAMENT QUERY**:
+- Include Winner, Runner-up, Semi-finalists, Host country, Format.
+- Key awards: Player of Tournament, Top Run Scorer (with runs), Top Wicket-Taker (with wickets).
+- For cross-tournament queries, present ALL years in a comprehensive table.
+- Hosts: 2003=SA, 2007=WI, 2011=Ind/SL/Ban, 2015=Aus/NZ, 2019=Eng, 2023=Ind.
+- Winners: 2003=Aus, 2007=Aus, 2011=Ind, 2015=Aus, 2019=Eng, 2023=Aus.
+- Add 2-3 sentences of narrative about the tournament's defining moments.""",
 
             "player": """
-**PLAYER QUERY**: Present complete career stats (Matches, Innings, Runs, Average, SR, Centuries, Fifties, HS). Include bowling if applicable. Show year-by-year breakdown for cross-tournament queries. Tell the player's World Cup story. Don't confuse WC stats with overall ODI stats.""",
+**PLAYER QUERY**:
+- Present a complete career stats table (Matches, Innings, Runs, Average, SR, Centuries, Fifties, HS).
+- Include bowling stats (Overs, Wickets, Average, Economy, Best Figures) if the player bowled.
+- Show a year-by-year breakdown table for cross-tournament queries with separate rows per WC.
+- Tell the player's World Cup story — key innings, milestones, defining moments.
+- Don't confuse WC stats with overall ODI career stats.""",
 
             "general": """
-**GENERAL QUERY**: Provide comprehensive, well-rounded answer. Ground in context data, supplement with knowledge. Be engaging and conversational.""",
+**GENERAL QUERY**:
+- Provide a comprehensive, well-rounded answer.
+- Ground in context data, supplement with cricket knowledge.
+- Use tables for any structured data.
+- Be engaging and conversational like a passionate cricket analyst.""",
         }
 
         instruction = type_instructions.get(query_type, type_instructions["general"])
@@ -1092,7 +1159,7 @@ class CricketChatbot:
                 queries=enhanced_queries,
                 top_k=search_params["top_k"],
                 score_threshold=search_params["score_threshold"],
-                max_total=12,
+                max_total=20,
                 bm25_weight=bm25_weight,
             )
         else:
