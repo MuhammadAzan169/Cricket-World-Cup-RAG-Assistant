@@ -30,7 +30,6 @@ document.addEventListener('DOMContentLoaded', function() {
   initNavbar();
   initHamburgerMenu();
   initParticleField('particle-canvas');
-  initParticleField('particle-canvas-2');
   initTypewriter();
   initScrollAnimations();
   initStatsCounters();
@@ -155,7 +154,7 @@ function initParticleField(canvasId) {
     particles = [];
     var w = canvas.offsetWidth;
     var h = canvas.offsetHeight;
-    var particleCount = canvasId === 'particle-canvas-2' ? 40 : 80;
+    var particleCount = 80;
 
     for (var i = 0; i < particleCount; i++) {
       particles.push({

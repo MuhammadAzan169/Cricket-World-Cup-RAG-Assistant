@@ -411,12 +411,9 @@ function initChatbot() {
     return parts.join(' \u00B7 ');
   }
 
-  // ─── Text Renderer — delegates to formatMarkdown if available ───
+  // ─── Text Renderer ───
   function renderText(text) {
     if (!text) return '';
-    if (typeof formatMarkdown === 'function') {
-      return formatMarkdown(text);
-    }
     return renderMarkdownFallback(text);
   }
 

@@ -55,8 +55,7 @@ FAISS_METRIC = "cosine"  # Cosine similarity via inner product on normalized vec
 BM25_ENABLED = True
 BM25_K1 = 1.5  # Term frequency saturation
 BM25_B = 0.75  # Document length normalization
-BM25_WEIGHT = 0.35  # Weight of BM25 score in hybrid search (0-1)
-SEMANTIC_WEIGHT = 0.65  # Weight of semantic (FAISS) score in hybrid search
+BM25_WEIGHT = 0.35  # Weight of BM25 score in hybrid search (semantic weight = 1 - BM25_WEIGHT)
 
 # ────────────────────────────────────────────────────────────
 # RE-RANKING CONFIGURATION

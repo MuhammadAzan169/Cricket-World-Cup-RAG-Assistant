@@ -77,18 +77,18 @@ logger = logging.getLogger("cricket_chatbot")
 # LLM CONFIGURATION
 # ────────────────────────────────────────────────────────────
 
+# Validate required environment variables before conversion (prevents TypeError on int/float cast)
+required_env_vars = ["LLM_PROVIDER", "LLM_MODEL", "LLM_API_KEY", "LLM_BASE_URL", "LLM_MAX_TOKENS", "LLM_TEMPERATURE"]
+missing_vars = [var for var in required_env_vars if not os.getenv(var)]
+if missing_vars:
+    raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}. Copy .env.example to .env and fill in values.")
+
 LLM_PROVIDER = os.getenv("LLM_PROVIDER")
 LLM_MODEL = os.getenv("LLM_MODEL")
 LLM_API_KEY = os.getenv("LLM_API_KEY")
 LLM_BASE_URL = os.getenv("LLM_BASE_URL")
 LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS"))
 LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE"))
-
-# Validate required environment variables (no fallbacks allowed)
-required_env_vars = ["LLM_PROVIDER", "LLM_MODEL", "LLM_API_KEY", "LLM_BASE_URL", "LLM_MAX_TOKENS", "LLM_TEMPERATURE"]
-missing_vars = [var for var in required_env_vars if os.getenv(var) is None]
-if missing_vars:
-    raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}. Please set them in .env file.")
 
 # ────────────────────────────────────────────────────────────
 # PLAYER NAME RESOLUTION
@@ -741,20 +741,27 @@ class LLMClient:
                     )
                     answer = (response.choices[0].message.content or "").strip()
                     logger.info(f"LLM response: {len(answer)} chars")
-                    return answer or "I could not generate a response. Please try rephrasing your question."
+                    if not answer:
+                        logger.warning(f"LLM returned empty response on attempt {attempt + 1}/{max_retries}")
+                        if attempt < max_retries - 1:
+                            import time as _time
+                            _time.sleep((attempt + 1) * 1.0)
+                            continue
+                        return "I could not generate a response. Please try rephrasing your question."
+                    return answer
                 except Exception as e:
                     last_error = e
                     error_msg = str(e)
-                    if "503" in error_msg or "502" in error_msg or "rate" in error_msg.lower():
+                    if any(code in error_msg for code in ["503", "502", "429", "400"]) or "rate" in error_msg.lower():
                         wait_time = (attempt + 1) * 1.5
                         logger.warning(f"LLM attempt {attempt + 1}/{max_retries} failed (retrying in {wait_time}s): {error_msg}")
                         import time as _time
                         _time.sleep(wait_time)
                     else:
                         raise
-            error_msg = str(last_error)
+            error_msg = str(last_error) if last_error else "Empty response"
             logger.error(f"LLM error after {max_retries} retries: {error_msg}")
-            return "⚠️ LLM Error: The AI service is temporarily unavailable. Please try again in a moment."
+            return f"⚠️ LLM Error: {error_msg}"
 
         except Exception as e:
             error_msg = str(e)
@@ -812,14 +819,23 @@ class LLMClient:
                         temperature=self.temperature,
                         stream=True,
                     )
+                    token_count = 0
                     for chunk in response:
                         if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                            token_count += 1
                             yield chunk.choices[0].delta.content
+                    if token_count == 0:
+                        logger.warning(f"LLM stream returned 0 tokens on attempt {attempt + 1}/{max_retries}")
+                        if attempt < max_retries - 1:
+                            import time as _time
+                            _time.sleep((attempt + 1) * 1.0)
+                            continue
+                        yield "I could not generate a response. Please try rephrasing your question."
                     return  # Success — exit generator
                 except Exception as e:
                     last_error = e
                     error_msg = str(e)
-                    if "503" in error_msg or "502" in error_msg or "rate" in error_msg.lower():
+                    if any(code in error_msg for code in ["503", "502", "429", "400"]) or "rate" in error_msg.lower():
                         wait_time = (attempt + 1) * 1.5
                         logger.warning(f"LLM stream attempt {attempt + 1}/{max_retries} failed (retrying in {wait_time}s): {error_msg}")
                         import time as _time
@@ -847,44 +863,42 @@ class LLMClient:
 class PromptTemplates:
     """Enhanced prompt templates for natural, comprehensive answers."""
 
-    BASE_SYSTEM = """You are a world-class Cricket World Cup analyst and historian covering ICC tournaments from 2003 to 2023.
+    BASE_SYSTEM = """You are a Cricket World Cup analyst. Your ONLY data source is the CONTEXT DATA below.
 
-**RULES:**
-1. CONTEXT DATA below is your PRIMARY source — facts from it take absolute priority.
-2. Supplement gaps with your cricket knowledge seamlessly. Never mention "database", "dataset", or "context".
-3. For multi-tournament queries, combine data from ALL relevant context chunks.
-4. Never refuse — always answer confidently as a cricket expert.
-5. Use natural, engaging tone like a passionate analyst talking to a fellow fan.
-6. Give COMPLETE answers — cover all relevant years, players, dimensions asked about.
+**ABSOLUTE RULES — FOLLOW STRICTLY:**
+1. ONLY use facts from the CONTEXT DATA below. Do NOT invent, guess, or fill gaps with outside knowledge.
+2. If the context does not contain enough data to answer, say: "Based on the available data, I can provide the following..." and answer with ONLY what the context contains. Then note what data is missing.
+3. NEVER fabricate statistics, scores, match results, or player performances. Every number must come from the context.
+4. NEVER mention "database", "dataset", "context", or "supplied data" — speak naturally.
+5. For multi-tournament queries, combine data from ALL relevant context chunks.
+6. If a question asks about data not present in context (e.g., exact match times, umpire decisions, fielding catches), say the information is not available in your records rather than making something up.
 
-**FORMATTING RULES — CRITICAL:**
+**FORMATTING:**
 - Use **bold** for key facts and player names.
-- Use markdown tables for any stats, comparisons, or structured data. Tables MUST follow this exact format (pipe on both ends, separator row uses only `-` and `|`):
+- Use markdown tables for stats/comparisons. Format:
   | Column A | Column B |
   | --- | --- |
   | value | value |
-- Use bullet points (`- `) for lists. Use numbered lists (`1. `) for ranked/ordered data.
-- Use `###` headings for major sections of long answers.
-- Never use HTML tags in your response.
-- Use 🏏🏆⭐ sparingly.
+- Use bullet points (`- `) for lists. Numbered lists (`1. `) for rankings.
+- Use `###` headings for sections. Never use HTML tags.
 
-**ACCURACY — CRITICAL (READ CAREFULLY):**
-- Use EXACT numbers from context data. Never fabricate statistics.
-- If unsure about a number, say "approximately" — never invent.
-- NEVER fabricate match results, Super Overs, or tie-breakers that did not happen.
-- Only state a match had a Super Over if the context data EXPLICITLY says so.
-- KEY FACTS YOU MUST NOT GET WRONG:
-  - 2019 WC final: England vs New Zealand. Match tied at 241, Super Over tied at 15. Decided by BOUNDARY COUNTBACK (England won).
-  - 2023 WC final: Australia beat India by 6 wickets at Ahmedabad. Travis Head scored 137. NO Super Over.
-  - 2011 WC final: India beat Sri Lanka by 6 wickets at Mumbai. Dhoni's iconic six.
-  - 2007 WC final venue: Kensington Oval, Barbados. Australia beat Sri Lanka by 53 runs (D/L).
-  - 2003 WC final: Australia beat India by 125 runs at Johannesburg.
-  - 2015 WC final: Australia beat New Zealand by 7 wickets at Melbourne.
-  - Australia: 6 World Cup titles (1987, 1999, 2003, 2007, 2015, 2023).
-- If context contradicts your knowledge, TRUST the context.
-- Player scorecard names: V Kohli=Virat Kohli, RT Ponting=Ricky Ponting, SR Tendulkar=Sachin Tendulkar, MS Dhoni, RG Sharma=Rohit Sharma. Use full names in responses.
-- For head-to-head queries: list EVERY match found in context data. Do not skip any.
-- For "best/most/top" queries: scan ALL context chunks before ranking. Include at least 5-10 entries.
+**ACCURACY — CRITICAL (VIOLATIONS WILL PRODUCE WRONG ANSWERS):**
+- Use EXACT numbers from context. If a number is not in the context, do NOT provide it.
+- NEVER fabricate Super Overs, tie-breakers, boundary countbacks, or match margins.
+- NEVER invent player scores for matches not in the context.
+- Do NOT make up economy rates, strike rates, or averages unless you can calculate them from context data.
+- VERIFIED FACTS (use these ONLY when context doesn't cover the match):
+  - 2003 WC final: Australia 359/2 beat India 234 by 125 runs at Johannesburg. Ponting 140*.
+  - 2007 WC final: Australia beat Sri Lanka by 53 runs (D/L) at Kensington Oval, Barbados. NOT Lord's.
+  - 2011 WC final: India 277/4 beat Sri Lanka 274/6 by 6 wickets at Wankhede, Mumbai. Dhoni 91*.
+  - 2015 WC final: Australia 186/3 beat New Zealand 183 by 7 wickets at MCG, Melbourne.
+  - 2019 WC final: England vs New Zealand. BOTH innings tied at 241. Super Over ALSO tied at 15-15. England won by BOUNDARY COUNTBACK (26 boundaries vs 17). NOT by wickets.
+  - 2023 WC final: Australia 241/4 beat India 240 by 6 wickets at Ahmedabad. Travis Head 137. NO Super Over.
+- Player name mappings: V Kohli=Virat Kohli, RT Ponting=Ricky Ponting, SR Tendulkar=Sachin Tendulkar, MS Dhoni, RG Sharma=Rohit Sharma, DPMD Jayawardene=Mahela Jayawardene, KC Sangakkara=Kumar Sangakkara.
+- For head-to-head: list EVERY match found in context. Do not skip any. Do not add matches not in context.
+- For "best/most/top" queries: scan ALL context chunks, rank by actual data. Include all entries found.
+- Rohit Sharma has NEVER scored a double century in ODI World Cups. His highest WC score is 140.
+- AB de Villiers' highest WC score is 162* vs West Indies in 2015, NOT 106* in every tournament.
 
 **COVERAGE:** 2003 (South Africa), 2007 (West Indies), 2011 (India/SL/Bangladesh), 2015 (Australia/NZ), 2019 (England), 2023 (India)."""
 
@@ -895,29 +909,30 @@ class PromptTemplates:
         type_instructions = {
             "statistical": """
 **STATISTICAL QUERY**:
-- Present exact numbers from context in a clean markdown table.
-- For "most/best/highest/top" queries: scan EVERY chunk in context, list ALL candidates found (aim for 8-10 rows minimum), then rank them.
-- For aggregate queries (e.g. total runs across WCs): SUM data across ALL tournaments in context.
-- Compute calculated stats (averages, strike rates) from raw data when possible.
-- Never fabricate exact numbers. If the context only has partial data, say so.
-- Always add a brief "Key Takeaways" section with 2-3 bullet points after the table.""",
+- Present ONLY numbers found in the context data in a clean markdown table.
+- For "most/best/highest/top" queries: scan EVERY chunk in context, list ALL candidates found, rank them.
+- For aggregate queries: SUM data across ALL tournaments found in context.
+- Compute averages/strike rates ONLY from raw data in context.
+- If context has partial data, explicitly state which tournaments/players are covered and which are missing.
+- Add a brief "Key Takeaways" section with 2-3 bullet points after the table.
+- NEVER fill gaps with made-up numbers. State what data is available and what is not.""",
 
             "comparative": """
 **COMPARISON QUERY**:
-- Create a detailed side-by-side comparison table with ALL relevant metrics (matches, runs, average, SR, 100s, 50s, HS, etc.).
-- Cover ALL tournaments where both subjects participated — check every chunk.
-- Add a year-by-year breakdown table if both appeared in multiple WCs.
-- End with an analytical verdict (2-3 sentences): who performed better overall and why.
-- Only include data points from context or certain knowledge.""",
+- Create a side-by-side comparison table with metrics found IN CONTEXT (matches, runs, average, SR, 100s, 50s, HS).
+- Only include metrics that the context actually provides. Mark missing data as "N/A" or "not in data".
+- Cover tournaments found in context — note which WCs have data for each player.
+- End with a verdict based ONLY on the data presented.
+- Do NOT guess or approximate stats that aren't in the context.""",
 
             "match_specific": """
 **MATCH QUERY**:
-- Include: teams, venue, date, toss (who won & chose), result with exact margin.
-- Scorecard summary table: top 3-4 batters (Name, Runs, Balls, 4s, 6s) and top 2-3 bowlers (Name, Overs, Runs, Wickets) for EACH innings.
-- Player of the Match, key turning points, match narrative.
-- For head-to-head queries: list EVERY match found in context as a table with columns (Tournament, Stage, Date, Venue, Result, Margin).
-- NEVER fabricate Super Overs or tie-breakers. Only mention them if context EXPLICITLY states one occurred.
-- Don't mix up details between different matches.""",
+- Include ONLY details found in context: teams, venue, date, toss, result with exact margin.
+- Scorecard: list batters and bowlers AS THEY APPEAR in context data. Do NOT invent scores.
+- For head-to-head: list EVERY match found in context as a table. Do NOT add matches not in context.
+- NEVER fabricate Super Overs, tie-breakers, or boundary countbacks unless context explicitly describes one.
+- Do NOT mix up details from different matches.
+- If asked for ball-by-ball data not in context, say it's not available at that level of detail.""",
 
             "tournament": """
 **TOURNAMENT QUERY**:
@@ -930,11 +945,11 @@ class PromptTemplates:
 
             "player": """
 **PLAYER QUERY**:
-- Present a complete career stats table (Matches, Innings, Runs, Average, SR, Centuries, Fifties, HS).
-- Include bowling stats (Overs, Wickets, Average, Economy, Best Figures) if the player bowled.
-- Show a year-by-year breakdown table for cross-tournament queries with separate rows per WC.
-- Tell the player's World Cup story — key innings, milestones, defining moments.
-- Don't confuse WC stats with overall ODI career stats.""",
+- Present stats ONLY from context data in a table. Include only columns where you have actual data.
+- Show year-by-year breakdown if context has data for multiple WCs.
+- Mention key innings/milestones ONLY if they appear in the context.
+- If context has limited data for this player, state clearly what WCs/matches are covered.
+- Do NOT confuse WC stats with overall ODI career stats. Do NOT invent career totals.""",
 
             "general": """
 **GENERAL QUERY**:
@@ -946,7 +961,7 @@ class PromptTemplates:
 
         instruction = type_instructions.get(query_type, type_instructions["general"])
 
-        context_section = context if context else "No specific data was retrieved for this query. Use your expert cricket knowledge to provide a helpful, accurate answer about ICC Cricket World Cups (2003-2023)."
+        context_section = context if context else "No specific data was retrieved for this query. Inform the user that the requested information is not available in the current data set. You may provide the verified final results listed in the system prompt, but do NOT fabricate any other statistics or details."
         
         coverage_section = f"\n\n**DATA COVERAGE NOTE**: {coverage_note}" if coverage_note else ""
 

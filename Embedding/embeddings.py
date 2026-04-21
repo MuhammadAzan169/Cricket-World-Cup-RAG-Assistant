@@ -1,6 +1,6 @@
 """
-DIE Knowledge Base — Embedding Generator
-==========================================
+Cricket World Cup RAG — Embedding Generator
+============================================
 Production-grade embedding generation using sentence-transformers/all-MiniLM-L6-v2.
 Free, local model with no API costs. Handles batching and normalization.
 

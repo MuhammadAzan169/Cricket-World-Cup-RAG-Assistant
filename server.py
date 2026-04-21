@@ -79,7 +79,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS — allow frontend origins
+# CORS — explicit allowed origins (do not add '*' here when allow_credentials=True)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -89,7 +89,7 @@ app.add_middleware(
         "http://127.0.0.1:5500",
         "http://localhost:3000",
         "http://127.0.0.1:3000",
-        "*",  # Allow all for dev — restrict in production
+        # Add your production domain here, e.g.: "https://your-domain.com"
     ],
     allow_credentials=True,
     allow_methods=["*"],

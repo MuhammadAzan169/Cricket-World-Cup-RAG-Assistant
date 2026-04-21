@@ -4,10 +4,10 @@
 - Vector Dimension: 384
 - Index Type: HNSWFlat
 - Distance Metric: Cosine
-- Total Documents: 316
-- Total Chunks: 1082
-- Total Vectors: 1082
-- Last Indexed: 2026-02-10T10:52:26.723108+00:00
+- Total Documents: 323
+- Total Chunks: 1427
+- Total Vectors: 1427
+- Last Indexed: 2026-04-20T14:26:37.135199+00:00
 - Version: v1.0
 
 ## Index Configuration
@@ -23,7 +23,7 @@
 
 ## Deduplication
 
-- Unique content hashes: 1082
+- Unique content hashes: 1427
 - Guarantees: Safe re-indexing, no duplicated vectors, incremental updates
 
 ## Storage
