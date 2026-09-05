@@ -93,6 +93,14 @@ class EmbeddingsManager:
 
         # Core components (reuse existing modules)
         self._embedder = EmbeddingGenerator()
+        # Force the (otherwise lazy) model load now, during startup, instead
+        # of on the first live chat request. Loading it mid-request blocks
+        # that request for 10-20s on cold start and competes for memory/CPU
+        # with whatever else is happening at that moment.
+        try:
+            _ = self._embedder.model
+        except Exception as e:
+            logger.warning(f"Eager embedding model load failed, will retry lazily on first use: {e}")
         self._store = FAISSVectorStore(index_dir=self._index_dir)
         self._store.initialize()
         self._chunker = TextChunker()

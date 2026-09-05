@@ -3,11 +3,12 @@
    With SSE Streaming, Markdown Rendering, Cricket UX
    ============================================= */
 
-// Use global API_BASE if already defined (from script.js), else detect
+// Use global API_BASE if already defined (from script.js), else derive from config.
 if (typeof API_BASE === 'undefined') {
-  var API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-    ? window.location.protocol + '//' + window.location.hostname + ':8000'
-    : '';
+  var API_BASE = ((window.APP_CONFIG && window.APP_CONFIG.API_BASE_URL) ||
+    ((window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+      ? window.location.protocol + '//' + window.location.hostname + ':8000'
+      : '')).replace(/\/+$/, '');
 }
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -35,7 +36,6 @@ function initChatbot() {
   var messageCount = 0;
   var streamMetaCounter = 0;
   var userIsScrolledUp = false;
-  var streamRenderScheduled = false;
 
   // Categorized quick actions with icons
   var quickActionsData = [
@@ -151,7 +151,7 @@ function initChatbot() {
 
     addMessage('user', text.trim());
     input.value = '';
-    setStatus('Searching...');
+    setStatus('Thinking...');
 
     // Try streaming first, fallback to regular
     sendStreamingMessage(text.trim());
@@ -165,6 +165,17 @@ function initChatbot() {
     var metadata = {};
     streamMetaCounter++;
     var metaId = 'stream-meta-' + streamMetaCounter;
+    // Render throttling state is per-stream. It used to be shared across every
+    // message, so a stream that ended with a repaint still pending (an error, a
+    // dropped connection) left the flag stuck on — and the NEXT answer then
+    // never repainted, leaving an empty bubble with a blinking cursor.
+    var renderTimer = null;
+    var finished = false;
+    // Watchdog for a connection that stays open but stops producing tokens —
+    // a real failure mode on a free-tier host that has gone to sleep mid-answer.
+    // Without it the user stares at an empty bubble indefinitely.
+    var stallTimer = null;
+    var STALL_MS = 90000;
 
     fetch(API_BASE + '/chat/stream', {
       method: 'POST',
@@ -181,8 +192,25 @@ function initChatbot() {
       var reader = response.body.getReader();
       var decoder = new TextDecoder();
       var buffer = '';
+      // Stream-scoped, NOT per-chunk: an SSE frame's "event:" and "data:" lines
+      // regularly land in two different network chunks. Resetting this on every
+      // chunk silently dropped whichever event got split, losing tokens.
+      var eventType = '';
 
       setStatus('Generating...');
+
+      function clearStall() {
+        if (stallTimer !== null) { clearTimeout(stallTimer); stallTimer = null; }
+      }
+      function armStall() {
+        clearStall();
+        stallTimer = setTimeout(function() {
+          if (finished) return;
+          handleStreamFailure(new Error('Stream stalled: no data for ' + (STALL_MS / 1000) + 's'));
+          try { reader.cancel(); } catch (e) {}
+        }, STALL_MS);
+      }
+      armStall();
 
       // Create bot message shell
       botMsg = document.createElement('div');
@@ -202,16 +230,18 @@ function initChatbot() {
       if (typeof lucide !== 'undefined') lucide.createIcons();
 
       function processChunk(result) {
+        if (finished) return;
         if (result.done) {
+          clearStall();
           finishStreaming();
           return;
         }
 
+        armStall();
         buffer += decoder.decode(result.value, { stream: true });
         var lines = buffer.split('\n');
         buffer = lines.pop() || '';
 
-        var eventType = '';
         for (var i = 0; i < lines.length; i++) {
           var line = lines[i].trim();
           if (line.startsWith('event: ')) {
@@ -223,13 +253,39 @@ function initChatbot() {
           }
         }
 
-        reader.read().then(processChunk).catch(function() { finishStreaming(); });
+        reader.read().then(processChunk).catch(handleStreamFailure);
       }
 
-      reader.read().then(processChunk).catch(function() { finishStreaming(); });
+      function handleStreamFailure(err) {
+        if (finished) return;
+        console.error('Stream read error:', err);
+        clearStall();
+        if (renderTimer !== null) { clearTimeout(renderTimer); renderTimer = null; }
+        if (!fullText.trim()) {
+          // No content ever arrived — the connection most likely dropped while
+          // the server was still working (e.g. a free-tier host idle-killing a
+          // long-lived SSE connection during a slow generation). Retry with the
+          // plain, non-streaming endpoint instead of leaving a blank bubble.
+          if (botMsg && botMsg.parentNode) botMsg.remove();
+          finished = true;
+          sendRegularMessage(text);
+          return;
+        }
+        fullText += '\n\n⚠️ *(Connection interrupted — response may be incomplete.)*';
+        finishStreaming();
+      }
+
+      reader.read().then(processChunk).catch(handleStreamFailure);
     })
     .catch(function(error) {
+      // Anything that threw before/while wiring up the stream: drop the typing
+      // indicator AND any partially built bubble, otherwise an empty shell with
+      // a blinking cursor is left stranded in the transcript.
       if (typingEl && typingEl.parentNode) typingEl.remove();
+      if (renderTimer !== null) { clearTimeout(renderTimer); renderTimer = null; }
+      if (stallTimer !== null) { clearTimeout(stallTimer); stallTimer = null; }
+      finished = true;
+      if (botMsg && botMsg.parentNode && !fullText.trim()) botMsg.remove();
       console.error('Stream error, falling back to regular:', error);
       sendRegularMessage(text);
     });
@@ -240,11 +296,10 @@ function initChatbot() {
         setStatus('Writing response...');
       } else if (type === 'token') {
         try { fullText += JSON.parse(data); } catch(e) { fullText += data; }
-        if (botTextEl && !streamRenderScheduled) {
-          streamRenderScheduled = true;
-          setTimeout(function() {
-            streamRenderScheduled = false;
-            if (botTextEl) {
+        if (botTextEl && renderTimer === null && !finished) {
+          renderTimer = setTimeout(function() {
+            renderTimer = null;
+            if (botTextEl && !finished) {
               botTextEl.innerHTML = renderText(fullText) + '<span class="streaming-cursor"></span>';
               scrollToBottom(false);
             }
@@ -264,7 +319,16 @@ function initChatbot() {
     }
 
     function finishStreaming() {
-      streamRenderScheduled = false;
+      // Guard against double-finish (e.g. a read error arriving after done) and
+      // kill any queued repaint, which would otherwise put the streaming cursor
+      // back on a message that is already complete.
+      if (finished) return;
+      finished = true;
+      if (stallTimer !== null) { clearTimeout(stallTimer); stallTimer = null; }
+      if (renderTimer !== null) { clearTimeout(renderTimer); renderTimer = null; }
+      if (!fullText.trim()) {
+        fullText = '⚠️ No response was generated. Please try rephrasing your question or try again.';
+      }
       if (botTextEl) {
         botTextEl.innerHTML = renderText(fullText);
       }
@@ -303,8 +367,10 @@ function initChatbot() {
       return response.json();
     })
     .then(function(data) {
-      if (data && data.answer) {
+      if (data && data.answer && data.answer.trim()) {
         addMessage('bot', data.answer, data);
+      } else {
+        addMessage('bot', '⚠️ No response was generated. Please try again.', null, true);
       }
     })
     .catch(function(error) {
@@ -313,7 +379,14 @@ function initChatbot() {
       if (error.name === 'TimeoutError' || error.name === 'AbortError') {
         errorMsg = '\u23F1\uFE0F Request timed out. The server might be processing a complex query \u2014 please try again.';
       } else if (error.message && (error.message.indexOf('Failed to fetch') !== -1 || error.message.indexOf('NetworkError') !== -1)) {
-        errorMsg = '\u{1F50C} Cannot connect to the server. Make sure the backend is running:\n\npython server.py';
+        // Tailor the advice to who is actually reading it. A visitor on the
+        // deployed site cannot "run python server.py" — for them the usual
+        // cause is the free-tier backend having spun down after 15 idle minutes.
+        var isLocal = window.location.hostname === 'localhost' ||
+                      window.location.hostname === '127.0.0.1';
+        errorMsg = isLocal
+          ? '\u{1F50C} Cannot connect to the server. Start the backend with:\n\npython app.py'
+          : '\u{1F50C} Cannot reach the server right now. It may be waking up from sleep \u2014 please wait a few seconds and try again.';
       } else {
         errorMsg = '\u26A0\uFE0F ' + (error.message || 'An unexpected error occurred');
       }
@@ -412,8 +485,19 @@ function initChatbot() {
   }
 
   // ─── Text Renderer ───
+  // Prefer the shared formatter in script.js: it handles ordered lists, fenced
+  // code blocks, and wraps tables in a horizontally scrollable container (which
+  // is what keeps wide stat tables usable on phones). renderMarkdownFallback is
+  // only reached if script.js somehow failed to load.
   function renderText(text) {
     if (!text) return '';
+    if (typeof formatMarkdown === 'function') {
+      try {
+        return formatMarkdown(text);
+      } catch (e) {
+        console.error('formatMarkdown failed, using fallback renderer:', e);
+      }
+    }
     return renderMarkdownFallback(text);
   }
 
@@ -483,12 +567,26 @@ function initChatbot() {
         '<div class="typing-dots">' +
           '<span></span><span></span><span></span>' +
         '</div>' +
-        '<span class="typing-label">Searching cricket database...</span>' +
+        '<span class="typing-label">Thinking...</span>' +
       '</div>';
 
     messagesContainer.appendChild(typing);
     scrollToBottom(true);
     if (typeof lucide !== 'undefined') lucide.createIcons();
+
+    // The free-tier backend can take a while to wake up / rotate through
+    // models, so let the user know it's not stuck rather than leaving a
+    // static label up for a long time.
+    var label = typing.querySelector('.typing-label');
+    var slowTimer = setTimeout(function() {
+      if (label && label.isConnected) label.textContent = 'Still thinking... the server may be waking up, this can take up to a minute';
+    }, 10000);
+    var origRemove = typing.remove.bind(typing);
+    typing.remove = function() {
+      clearTimeout(slowTimer);
+      origRemove();
+    };
+
     return typing;
   }
 

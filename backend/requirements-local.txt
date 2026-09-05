@@ -1,0 +1,17 @@
+# ── Cricket World Cup RAG — Local development extras ──────────────────
+#
+# Install with:   pip install -r requirements-local.txt
+# (it pulls in requirements.txt first, so this one file is enough locally)
+#
+# These packages are DELIBERATELY excluded from requirements.txt: torch alone
+# needs 300-400MB+ of RAM just to import, which does not fit in the 512MB
+# Render free plan. Locally there is no such ceiling, so the higher-quality
+# cross-encoder re-ranker is enabled by default (see config.py → IS_LOCAL).
+
+-r requirements.txt
+
+# Cross-encoder re-ranker: cross-encoder/ms-marco-MiniLM-L-6-v2.
+# Re-scores the top-N retrieved chunks with a full query+passage transformer,
+# which is noticeably more accurate than the metadata-boost fallback.
+torch>=2.2,<3.0
+sentence-transformers>=3.0,<6.0

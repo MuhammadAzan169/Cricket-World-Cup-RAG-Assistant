@@ -7,7 +7,7 @@
 - Total Documents: 323
 - Total Chunks: 1427
 - Total Vectors: 1427
-- Last Indexed: 2026-04-20T14:26:37.135199+00:00
+- Last Indexed: 2026-06-26T00:37:41.765215+00:00
 - Version: v1.0
 
 ## Index Configuration

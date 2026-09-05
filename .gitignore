@@ -1,97 +1,77 @@
-# Generated .gitignore for this Cricket Companion project
-# OS / Editor
-.DS_Store
-Thumbs.db
-desktop.ini
-ehthumbs.db
+# ── Cricket World Cup RAG Assistant — repo-wide ignores ───────────────
 
-# OneDrive temp files
-~$*
+# Secrets — never commit real environment files. `.env.example` IS tracked.
+.env
+.env.local
+.env.*.local
+backend/.env
+frontend/.env
+*.key
+*.pem
+secrets.json
 
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
-.python-version
+*.egg-info/
 .Python
+.python-version
 
 # Virtual environments
+.venv/
 venv/
 env/
-.venv/
-env.bak/
-venv.bak/
 venv3/
 
-# Env and secrets
-.env
-.env.*
-*.key
-*.pem
-secrets.json
-local_settings.py
+# Node / Vercel
+node_modules/
+.vercel/
+.next/
 
-# Packaging / build
+# Build artifacts
 build/
 dist/
-eggs/
-*.egg-info/
 pip-wheel-metadata/
 wheelhouse/
 
-# Testing
-.pytest_cache/
-.coverage
-coverage.xml
-htmlcov/
+# Model caches (downloaded at runtime / build time)
+.hf-cache/
+.fastembed-cache/
+backend/.hf-cache/
+backend/.fastembed-cache/
 
-# Jupyter
-.ipynb_checkpoints
-
-# IDEs
-.vscode/
-.idea/
-*.sublime-project
-*.sublime-workspace
-
-# Logs
+# Runtime output
+backend/history.txt
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Node
-node_modules/
+# Testing
+.pytest_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
 
-# Frontend build artifacts
-/Frontend/build/
-/Frontend/dist/
+# Notebooks
+.ipynb_checkpoints/
 
-# Project-specific: large datasets and embeddings
-# Ignore the entire Cricket Data folder (do not push dataset or generated embeddings)
-"Cricket Data/"
-"Cricket Data/**"
-
-# We intentionally KEEP `index/` tracked (indexes with frontend and other python files).
-# If `index/` was previously ignored or tracked files exist, you'll need to untrack/re-track accordingly.
-
-# If you want to ignore specific generated index files, add them here explicitly.
-
-
-# Machine learning model files
-*.ckpt
-*.pt
-*.pth
-*.bin
+# IDEs / OS
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+~$*
 
 # Misc
 *.sqlite
 *.db
 
-# Optional: prevent committing local config with secrets
-# If you keep secrets in `config.py`, consider renaming to `config.example.py` and add real `config.py` to .gitignore
-config.py
-
-# If you accidentally committed large files already, run:
-# git rm --cached <file>
-# then commit and push. For history rewriting, use the BFG Repo-Cleaner or git filter-repo.
+# Generated at build time: by frontend/build.mjs on Vercel, and by app.py locally.
+frontend/js/config.js

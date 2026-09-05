@@ -1,0 +1,24 @@
+# ── Cricket World Cup RAG — Backend Dependencies (Render free plan safe) ──
+#
+# Everything here must fit inside 512MB RAM. Anything heavier than that
+# belongs in requirements-local.txt, which is installed only for local dev.
+
+# ── Web layer ────────────────────────────────────────────────────────
+fastapi>=0.110,<1.0
+uvicorn[standard]>=0.27,<1.0
+pydantic>=2.6,<3.0
+python-dotenv>=1.0
+python-multipart>=0.0.9
+
+# ── LLM client (OpenAI-compatible: OpenRouter, OpenAI, …) ────────────
+openai>=1.30,<2.0
+httpx>=0.27,<1.0
+
+# ── Hybrid retrieval: dense (FAISS + fastembed/onnxruntime) + sparse (BM25) ──
+# fastembed serves a quantized ONNX export of all-MiniLM-L6-v2 via onnxruntime.
+# No torch dependency — torch alone needs 300-400MB+ RAM just to import and was
+# causing OOM kills on Render's 512MB instances.
+fastembed>=0.4,<1.0
+faiss-cpu>=1.8,<2.0
+rank-bm25>=0.2.2
+numpy>=1.26,<3.0

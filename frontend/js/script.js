@@ -3,10 +3,12 @@
    FIXED: Removed duplicate handlers, race conditions, and conflicts
    ============================================= */
 
-// Auto-detect API base URL
-var API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-  ? window.location.protocol + '//' + window.location.hostname + ':8000'
-  : '';
+// API base — injected at build time via /js/config.js (window.APP_CONFIG).
+// Falls back to :8000 on localhost, else same origin.
+var API_BASE = ((window.APP_CONFIG && window.APP_CONFIG.API_BASE_URL) ||
+  ((window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+    ? window.location.protocol + '//' + window.location.hostname + ':8000'
+    : '')).replace(/\/+$/, '');
 
 // Force scroll to top BEFORE the browser restores scroll position
 if ('scrollRestoration' in history) {

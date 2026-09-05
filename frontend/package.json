@@ -1,0 +1,12 @@
+{
+  "name": "cricket-rag-frontend",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Static frontend (landing + chatbot) for the Cricket World Cup RAG assistant.",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "node build.mjs && npx --yes serve -l 5500 .",
+    "vercel-build": "node build.mjs"
+  }
+}

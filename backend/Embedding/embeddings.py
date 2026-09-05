@@ -1,17 +1,25 @@
 """
 Cricket World Cup RAG — Embedding Generator
 ============================================
-Production-grade embedding generation using sentence-transformers/all-MiniLM-L6-v2.
-Free, local model with no API costs. Handles batching and normalization.
+Embedding generation using a quantized ONNX export of
+sentence-transformers/all-MiniLM-L6-v2, served via fastembed/onnxruntime
+instead of torch + sentence-transformers. The torch stack alone resides
+at 300-400MB+ RAM just from import — too much headroom to spare on a
+512MB Render instance, where it was causing OOM kills on real requests.
+Handles batching and normalization.
 
 Vector dimension: 384
 Similarity metric: Cosine (via normalized inner product)
 """
 
 import logging
+import os
 from typing import List
 
 import numpy as np
+
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
 from config import (
     EMBEDDING_MODEL,
@@ -26,10 +34,11 @@ logger.setLevel(LOG_LEVEL)
 
 class EmbeddingGenerator:
     """
-    Generates normalized embeddings using sentence-transformers/all-MiniLM-L6-v2.
+    Generates normalized embeddings using a fastembed/onnxruntime-backed
+    ONNX export of sentence-transformers/all-MiniLM-L6-v2.
 
     Features:
-        - Local model, no API costs
+        - Local model, no API costs, no torch dependency
         - Automatic batching for efficiency
         - L2 normalization for cosine similarity via inner product
         - Input validation
@@ -44,15 +53,15 @@ class EmbeddingGenerator:
 
     @property
     def model(self):
-        """Lazy-initialize sentence-transformers model."""
+        """Lazy-initialize the fastembed ONNX model."""
         if self._model is None:
             try:
-                from sentence_transformers import SentenceTransformer
+                from fastembed import TextEmbedding
                 logger.info(f"Loading embedding model: {self._model_name}")
-                self._model = SentenceTransformer(self._model_name)
+                self._model = TextEmbedding(model_name=self._model_name, threads=1)
             except ImportError:
                 raise ImportError(
-                    "sentence-transformers package required. Install with: pip install sentence-transformers"
+                    "fastembed package required. Install with: pip install fastembed"
                 )
         return self._model
 
@@ -88,8 +97,8 @@ class EmbeddingGenerator:
             np.ndarray of shape (384,), L2-normalized.
         """
         text = self._validate_input(text)
-        embeddings = self.model.encode([text], convert_to_numpy=True, normalize_embeddings=True)
-        return embeddings[0].astype(np.float32)
+        embeddings = np.array(list(self.model.embed([text])), dtype=np.float32)
+        return self._normalize(embeddings)[0]
 
     def embed_batch(self, texts: List[str]) -> np.ndarray:
         """
@@ -109,20 +118,12 @@ class EmbeddingGenerator:
 
         logger.info(f"Embedding {len(validated)} texts in batches of {self._batch_size}...")
 
-        # sentence-transformers handles batching internally, but we'll batch for logging
-        all_embeddings = []
-        for i in range(0, len(validated), self._batch_size):
-            batch = validated[i : i + self._batch_size]
-            batch_num = i // self._batch_size + 1
-            total_batches = (len(validated) + self._batch_size - 1) // self._batch_size
-
-            logger.debug(f"Embedding batch {batch_num}/{total_batches} ({len(batch)} texts)...")
-
-            embeddings = self.model.encode(batch, convert_to_numpy=True, normalize_embeddings=True)
-            all_embeddings.append(embeddings)
-
-        vectors = np.vstack(all_embeddings).astype(np.float32)
-        return vectors
+        # fastembed handles batching internally via batch_size
+        vectors = np.array(
+            list(self.model.embed(validated, batch_size=self._batch_size)),
+            dtype=np.float32,
+        )
+        return self._normalize(vectors)
 
     def embed_query(self, query: str) -> np.ndarray:
         """

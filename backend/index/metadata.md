@@ -1,6 +1,6 @@
 # DIE Knowledge Base — Metadata
 
-**Generated:** 2026-04-20T14:26:37.129293+00:00
+**Generated:** 2026-06-26T00:37:41.763220+00:00
 **Total Chunks:** 1427
 **Total Vectors:** 1427
 

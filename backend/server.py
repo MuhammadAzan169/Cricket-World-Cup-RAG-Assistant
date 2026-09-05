@@ -18,18 +18,26 @@ Run:
 """
 
 import logging
+import os
 import time
-from pathlib import Path
 from contextlib import asynccontextmanager
-from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from config import APP_ENV, CROSS_ENCODER_RERANK
 from main import CricketChatbot
+
+# Allowed frontend origins. Defaults to "*" (all origins) since this is a public
+# read-only API with no credentials. Set ALLOWED_ORIGINS env var to a comma-separated
+# list of specific origins to restrict access (e.g. "https://myapp.vercel.app").
+_origins_env = os.getenv("ALLOWED_ORIGINS", "*").strip()
+ALLOWED_ORIGINS = ["*"] if _origins_env in ("", "*") else [
+    o.strip() for o in _origins_env.split(",") if o.strip()
+]
+PORT = int(os.getenv("PORT", "8000"))
 
 # ────────────────────────────────────────────────────────────
 # LOGGING
@@ -46,6 +54,7 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
 logging.getLogger("huggingface_hub.utils._http").setLevel(logging.WARNING)
 logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
+logging.getLogger("fastembed").setLevel(logging.WARNING)
 
 # ────────────────────────────────────────────────────────────
 # CHATBOT SINGLETON
@@ -79,20 +88,12 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS — explicit allowed origins (do not add '*' here when allow_credentials=True)
+# CORS — origins configured via the ALLOWED_ORIGINS env var (no wildcard in prod).
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:8000",
-        "http://127.0.0.1:8000",
-        "http://localhost:5500",
-        "http://127.0.0.1:5500",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        # Add your production domain here, e.g.: "https://your-domain.com"
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -162,12 +163,12 @@ async def chat(request: ChatRequest):
         return ChatResponse(**result)
     except RuntimeError as e:
         logger.error(f"Runtime error: {e}")
-        raise HTTPException(status_code=503, detail=str(e))
+        raise HTTPException(status_code=503, detail="The server is still starting up — please try again in a few seconds.")
     except Exception as e:
         logger.error(f"Unexpected error processing question: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"An error occurred while processing your question: {str(e)}",
+            detail="Something went wrong while processing your question. Please try again in a moment.",
         )
 
 
@@ -214,8 +215,15 @@ async def clear_history():
 
 @app.get("/health")
 async def health():
-    """Simple health check endpoint."""
-    return {"status": "healthy", "timestamp": time.time()}
+    """Simple health check endpoint (also used by the Render health check)."""
+    return {
+        "status": "healthy",
+        "timestamp": time.time(),
+        # Which runtime profile is active — handy for confirming a deploy is
+        # actually running the lightweight path and not trying to load torch.
+        "environment": APP_ENV,
+        "cross_encoder": CROSS_ENCODER_RERANK,
+    }
 
 
 @app.post("/chat/stream")
@@ -233,7 +241,8 @@ async def chat_stream(request: ChatRequest):
         except Exception as e:
             import json
             logger.error(f"Stream error: {e}", exc_info=True)
-            yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+            friendly = "Something went wrong while generating a response. Please try again in a moment."
+            yield f"event: error\ndata: {json.dumps({'error': friendly})}\n\n"
 
     return StreamingResponse(
         generate(),
@@ -247,25 +256,20 @@ async def chat_stream(request: ChatRequest):
 
 
 # ────────────────────────────────────────────────────────────
-# STATIC FILES (Frontend)
+# ROOT
 # ────────────────────────────────────────────────────────────
 
-FRONTEND_DIR = Path(__file__).parent / "Frontend"
 
-if FRONTEND_DIR.exists():
-    # Serve specific HTML pages
-    @app.get("/")
-    async def serve_index():
-        """Serve the landing page."""
-        return FileResponse(FRONTEND_DIR / "index.html")
-
-    @app.get("/chat-page")
-    async def serve_chatbot():
-        """Serve the chatbot page."""
-        return FileResponse(FRONTEND_DIR / "chatbot.html")
-
-    # Mount static files (CSS, JS, images)
-    app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")
+@app.get("/")
+async def root():
+    """API info. The frontend is deployed separately (Vercel)."""
+    return {
+        "name": app.title,
+        "version": app.version,
+        "docs": "/docs",
+        "health": "/health",
+        "environment": APP_ENV,
+    }
 
 
 # ────────────────────────────────────────────────────────────
@@ -275,11 +279,5 @@ if FRONTEND_DIR.exists():
 if __name__ == "__main__":
     import uvicorn
 
-    logger.info("🏏 Launching Cricket World Cup RAG Server on http://localhost:8000")
-    uvicorn.run(
-        "server:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=False,
-        log_level="info",
-    )
+    logger.info("🏏 Launching Cricket World Cup RAG Server on port %d", PORT)
+    uvicorn.run("server:app", host="0.0.0.0", port=PORT, reload=False, log_level="info")

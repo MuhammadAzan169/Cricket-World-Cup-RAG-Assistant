@@ -1,0 +1,81 @@
+# ── Render service definition — Cricket World Cup RAG backend ─────────
+#
+# This is a monorepo: the backend is this folder, the frontend lives in
+# ../frontend and is deployed separately on Vercel.
+#
+# NORMAL DEPLOY (what this file documents) — Render dashboard → New + →
+# Web Service → pick the repo, then set:
+#
+#   Root Directory:   backend
+#   Runtime:          Docker      (Dockerfile path: backend/Dockerfile)
+#   Instance Type:    Free
+#   Health Check:     /health
+#
+# ...and add the environment variables listed below in the dashboard.
+#
+# USING RENDER BLUEPRINTS INSTEAD? Blueprints are only read from the
+# REPOSITORY ROOT, so copy this file to ../render.yaml and add
+# `rootDir: backend` under the service. Everything else stays the same.
+#
+services:
+  - type: web
+    name: cricket-rag-api
+    runtime: docker
+    plan: free                       # 512MB RAM, spins down after 15 idle minutes
+    region: oregon
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      # ── Environment mode ──────────────────────────────────────────
+      # "render" keeps the heavy local-only models (torch cross-encoder)
+      # switched off so the service fits in 512MB. Do not set this to "local".
+      - key: APP_ENV
+        value: render
+      - key: CROSS_ENCODER_RERANK
+        value: "false"
+
+      # ── CORS ──────────────────────────────────────────────────────
+      # Comma-separated list of your Vercel origins, no trailing slash, e.g.
+      #   https://cricket-rag.vercel.app,https://cricket-rag-git-main-you.vercel.app
+      - key: ALLOWED_ORIGINS
+        sync: false
+
+      # ── LLM credentials — set these in the dashboard, never in git ──
+      # LLM_API_KEY is the primary key. OPENROUTER_API_KEY1..N form an
+      # optional rotation pool (any var starting with OPENROUTER_API_KEY is
+      # auto-discovered). At least one of them must be set or startup fails.
+      - key: LLM_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY1
+        sync: false
+      - key: OPENROUTER_API_KEY2
+        sync: false
+      - key: OPENROUTER_API_KEY3
+        sync: false
+
+      # ── LLM settings ──────────────────────────────────────────────
+      - key: LLM_PROVIDER
+        value: openrouter
+      - key: LLM_MODEL
+        value: openai/gpt-oss-20b:free
+      - key: LLM_BASE_URL
+        value: https://openrouter.ai/api/v1
+      - key: OPENROUTER_BASE_URL
+        value: https://openrouter.ai/api/v1
+      - key: LLM_MAX_TOKENS
+        value: "3000"
+      - key: LLM_TEMPERATURE
+        value: "0.3"
+      # Bound the worst-case retry fan-out so one question can never outlive
+      # the client timeout on a slow free instance.
+      - key: LLM_MAX_KEYS_PER_MODEL
+        value: "4"
+      - key: LLM_REQUEST_BUDGET_SECONDS
+        value: "45"
+
+      # ── Runtime tuning for a 512MB / shared-CPU instance ───────────
+      - key: OMP_NUM_THREADS
+        value: "1"
+      - key: TOKENIZERS_PARALLELISM
+        value: "false"

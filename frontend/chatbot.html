@@ -5,11 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Cricket AI Chatbot | World Cup Expert</title>
   <meta name="description" content="Chat with Cricket AI - Your expert on ICC World Cups 2003-2023." />
+  <meta name="theme-color" content="hsl(220, 25%, 6%)" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="/assets/css/style.css" />
   <!-- FIX: Removed duplicate dynamic CSS link and conditional second script load -->
   <style>
     /* =============================================
@@ -19,6 +20,48 @@
       min-height: 100vh;
       background: radial-gradient(ellipse at top, hsl(145, 50%, 10%) 0%, hsl(220, 25%, 6%) 50%);
       overflow: hidden;
+      position: relative;
+      isolation: isolate;
+    }
+
+    /* Ambient color orbs — same visual language as the player/feature cards on
+       the main page, just rendered behind the whole viewport here. */
+    .chatbot-page::before,
+    .chatbot-page::after {
+      content: '';
+      position: fixed;
+      z-index: 0;
+      border-radius: 50%;
+      pointer-events: none;
+      filter: blur(3rem);
+    }
+
+    .chatbot-page::before {
+      top: -8rem;
+      right: -6rem;
+      width: 28rem;
+      height: 28rem;
+      background: radial-gradient(circle, hsla(42, 55%, 55%, 0.1) 0%, transparent 70%);
+    }
+
+    .chatbot-page::after {
+      bottom: -10rem;
+      left: -8rem;
+      width: 32rem;
+      height: 32rem;
+      background: radial-gradient(circle, hsla(145, 60%, 30%, 0.14) 0%, transparent 70%);
+    }
+
+    /* Particle canvas reused from the main page (auto-initialized by
+       script.js's initParticleField via the shared #particle-canvas id) —
+       pinned behind all content here instead of confined to a hero section. */
+    .chatbot-particle-canvas {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 0;
+      opacity: 0.55;
     }
 
     .chatbot-wrapper {
@@ -28,6 +71,8 @@
       height: 100vh;
       display: flex;
       flex-direction: column;
+      position: relative;
+      z-index: 1;
     }
 
     /* Header */
@@ -81,6 +126,50 @@
       margin-top: 0.25rem;
     }
 
+    /* Compact stats strip in the header — mirrors the homepage's stats
+       cards in miniature, only shown when there's enough room. */
+    .chatbot-header-stats {
+      display: flex;
+      gap: 0.6rem;
+      flex-shrink: 0;
+    }
+
+    .mini-stat {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 0.4rem 0.85rem;
+      min-width: 64px;
+      background: hsla(220, 20%, 11%, 0.6);
+      border: 1px solid hsla(220, 15%, 18%, 0.5);
+      border-radius: 0.65rem;
+      backdrop-filter: blur(10px);
+      transition: all 0.3s ease;
+      font-size: 0.6rem;
+      color: var(--muted-foreground);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 600;
+    }
+
+    .mini-stat:hover {
+      border-color: hsla(42, 55%, 55%, 0.4);
+      transform: translateY(-2px);
+    }
+
+    .mini-stat span {
+      font-family: var(--font-display);
+      font-size: 1rem;
+      font-weight: 800;
+      color: var(--secondary);
+      line-height: 1.2;
+    }
+
+    @media (max-width: 900px) {
+      .chatbot-header-stats { display: none; }
+    }
+
     /* Main Chat Container */
     .full-chat-container {
       flex: 1;
@@ -95,6 +184,41 @@
         0 0 0 1px hsla(220, 15%, 18%, 0.3),
         inset 0 1px 0 hsla(220, 15%, 25%, 0.15);
       min-height: 0;
+      position: relative;
+      opacity: 0;
+      animation:
+        scale-in 0.6s var(--ease-out-back) 0.15s both,
+        chat-frame-glow 5s ease-in-out 0.8s infinite;
+    }
+
+    /* Thin animated accent bar across the top, echoing the feature/match
+       card top-accent treatment used throughout the main page. */
+    .full-chat-container::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--secondary), var(--accent), transparent);
+      background-size: 200% 100%;
+      animation: gradient-shift 6s ease infinite;
+      z-index: 2;
+    }
+
+    @keyframes chat-frame-glow {
+      0%, 100% {
+        box-shadow:
+          0 24px 80px rgba(0, 0, 0, 0.5),
+          0 0 0 1px hsla(220, 15%, 18%, 0.3),
+          inset 0 1px 0 hsla(220, 15%, 25%, 0.15);
+      }
+      50% {
+        box-shadow:
+          0 24px 90px rgba(0, 0, 0, 0.5),
+          0 0 0 1px hsla(42, 55%, 55%, 0.18),
+          inset 0 1px 0 hsla(220, 15%, 25%, 0.15);
+      }
     }
 
     /* Chat Header Bar */
@@ -109,6 +233,7 @@
     }
 
     .chatbot-avatar {
+      position: relative;
       width: 2.75rem;
       height: 2.75rem;
       border-radius: 50%;
@@ -119,6 +244,19 @@
       border: 2px solid hsla(145, 60%, 30%, 0.35);
       flex-shrink: 0;
       animation: glow-pulse 3s ease-in-out infinite;
+    }
+
+    .avatar-online-dot {
+      position: absolute;
+      bottom: -2px;
+      right: -2px;
+      width: 0.65rem;
+      height: 0.65rem;
+      border-radius: 50%;
+      background: hsl(145, 70%, 50%);
+      border: 2px solid hsl(220, 22%, 9%);
+      box-shadow: 0 0 6px hsla(145, 70%, 50%, 0.7);
+      animation: pulse-glow 2s ease-in-out infinite;
     }
 
     .chatbot-header-text h3 {
@@ -365,8 +503,9 @@
       position: absolute;
       top: 0.6rem;
       right: 0.6rem;
-      width: 1.5rem;
-      height: 1.5rem;
+      /* 2rem = 32px: the minimum comfortable touch target on a phone. */
+      width: 2rem;
+      height: 2rem;
       border-radius: 50%;
       background: hsla(220, 15%, 18%, 0.5);
       border: 1px solid hsla(220, 15%, 22%, 0.4);
@@ -597,6 +736,45 @@
       cursor: not-allowed;
     }
 
+    /* Footer credit — slim, only shown when there's vertical room to spare */
+    .chatbot-footer-credit {
+      flex-shrink: 0;
+      text-align: center;
+      padding: 0.6rem 0 0.1rem;
+      font-size: 0.72rem;
+      color: var(--muted-foreground);
+      opacity: 0.7;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+    }
+
+    .chatbot-footer-credit a {
+      color: var(--secondary);
+      font-weight: 600;
+      transition: opacity 0.2s ease;
+    }
+
+    .chatbot-footer-credit a:hover {
+      opacity: 0.75;
+      text-decoration: underline;
+    }
+
+    .cricket-ball-spin-mini {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: hsl(0, 60%, 40%);
+      box-shadow: 0 0 6px hsla(0, 60%, 50%, 0.5);
+      animation: spin-ball 1.5s linear infinite;
+    }
+
+    @media (max-height: 700px) {
+      .chatbot-footer-credit { display: none; }
+    }
+
     /* Responsive */
     @media (max-width: 768px) {
       .chatbot-wrapper {
@@ -627,12 +805,36 @@
       .welcome-stat-label { font-size: 0.6rem; }
 
       .chat-suggestions-wrapper { padding: 0.4rem 0.75rem; }
-      .suggestion-btn { font-size: 0.72rem; padding: 0.35rem 0.65rem; }
+
+      /* Wrapping 10 chips on a phone builds a 10-row wall that pushes the
+         conversation off screen. Lay them out as one swipeable row instead.
+         Must match the specificity of `.chatbot-page .chat-suggestions` in
+         style.css, which forces flex-wrap:wrap for the desktop layout. */
+      .chatbot-page .chat-suggestions {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        overflow-y: hidden;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        padding-bottom: 0.15rem;
+      }
+      .chatbot-page .chat-suggestions::-webkit-scrollbar { display: none; }
+
+      .chatbot-page .suggestion-btn {
+        font-size: 0.72rem;
+        padding: 0.45rem 0.7rem;
+        min-height: 2rem;    /* keep chips tappable on phones */
+        flex-shrink: 0;      /* never squash a chip into an unreadable sliver */
+        white-space: nowrap;
+      }
 
       .chat-msg-bubble { max-width: 90%; font-size: 0.82rem; }
 
       .system-status { padding: 0.3rem 0.6rem; font-size: 0.65rem; }
       .chatbot-avatar { width: 2.25rem; height: 2.25rem; }
+
+      .chatbot-particle-canvas { opacity: 0.3; }
+      .chatbot-footer-credit { font-size: 0.65rem; }
     }
 
     @media (max-width: 480px) {
@@ -675,6 +877,9 @@
   </style>
 </head>
 <body class="chatbot-page">
+  <!-- Ambient particle background (auto-initialized by script.js initParticleField) -->
+  <canvas id="particle-canvas" class="particle-canvas chatbot-particle-canvas"></canvas>
+
   <!-- Page Transition Overlay -->
   <div class="page-transition-overlay" id="page-overlay">
     <div class="transition-spinner">
@@ -688,7 +893,7 @@
 
   <div class="chatbot-wrapper">
     <!-- Header -->
-    <div class="chatbot-header">
+    <div class="chatbot-header anim-fade-up">
       <a href="index.html" class="back-btn" id="back-btn">
         <i data-lucide="arrow-left" class="icon-sm"></i>
         Back to Home
@@ -696,6 +901,11 @@
       <div class="chatbot-header-info">
         <h1 class="chatbot-title">Cricket AI <span class="text-gradient-gold">Chatbot</span></h1>
         <p class="chatbot-subtitle">Your expert on ICC World Cups 2003–2023</p>
+      </div>
+      <div class="chatbot-header-stats" aria-hidden="true">
+        <div class="mini-stat"><span>6</span>World Cups</div>
+        <div class="mini-stat"><span>293+</span>Matches</div>
+        <div class="mini-stat"><span>14</span>Teams</div>
       </div>
     </div>
 
@@ -705,6 +915,7 @@
       <div class="chat-header-bar">
         <div class="chatbot-avatar">
           <i data-lucide="bot" class="icon-md text-accent"></i>
+          <span class="avatar-online-dot" title="Online"></span>
         </div>
         <div class="chatbot-header-text" style="flex: 1">
           <h3>
@@ -775,11 +986,19 @@
         <div class="input-hint" id="input-hint">Press Enter to send</div>
       </div>
     </div>
+
+    <!-- Footer credit -->
+    <div class="chatbot-footer-credit">
+      <span class="cricket-ball-spin-mini"></span>
+      Built with passion 🏏 — ICC World Cups 2003–2023
+      <a href="index.html">Back to site</a>
+    </div>
   </div>
 
-  <!-- Load shared formatMarkdown from script.js first, then chatbot.js -->
-  <script src="script.js"></script>
-  <script src="chatbot.js"></script>
+  <!-- Load config first, then shared formatMarkdown from script.js, then chatbot.js -->
+  <script src="/js/config.js"></script>
+  <script src="/js/script.js"></script>
+  <script src="/js/chatbot.js"></script>
   <script>
     // Initialize Lucide icons for static HTML content
     if (typeof lucide !== 'undefined') lucide.createIcons();
@@ -796,25 +1015,31 @@
     }
 
     // Check backend health
+    var healthChecked = false;
     function checkSystemHealth() {
-      updateSystemStatus('loading');
+      // Only show "Loading" before the first result. Re-flipping the badge to
+      // Loading on every poll made it flicker every 30s on a healthy backend.
+      if (!healthChecked) updateSystemStatus('loading');
 
       var controller = new AbortController();
-      var timeoutId = setTimeout(function() { controller.abort(); }, 5000);
+      // A Render free instance that has spun down needs 30-60s to answer its
+      // first request, so a short timeout would report a healthy backend as
+      // offline. Give it room.
+      var timeoutId = setTimeout(function() { controller.abort(); }, 60000);
 
       fetch(API_BASE + '/health', { signal: controller.signal })
         .then(function(res) {
           clearTimeout(timeoutId);
+          healthChecked = true;
           updateSystemStatus(res.ok ? 'active' : 'inactive');
         })
         .catch(function() {
           clearTimeout(timeoutId);
-          // No backend running — check if formatMarkdown exists (local mode)
-          if (typeof formatMarkdown === 'function') {
-            updateSystemStatus('active');
-          } else {
-            updateSystemStatus('inactive');
-          }
+          healthChecked = true;
+          // The backend genuinely could not be reached. Previously this branch
+          // reported "Active" whenever script.js had loaded, which is always
+          // true — so the badge could never show a real outage.
+          updateSystemStatus('inactive');
         });
     }
 
