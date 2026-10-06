@@ -2208,12 +2208,15 @@ input {
    horizontal scroll, so we override from style.css
    ============================================= */
 .chatbot-page .chat-suggestions {
-  flex-wrap: wrap;
-  overflow-x: visible;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
   mask-image: none;
   -webkit-mask-image: none;
   padding: 0;
 }
+
+.chatbot-page .chat-suggestions::-webkit-scrollbar { display: none; }
 
 /* Full chat container needs relative for scroll button */
 .full-chat-container {
